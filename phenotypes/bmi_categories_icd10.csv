@@ -1,0 +1,9 @@
+code,code_description,terminology,group
+E66,Obesity,ICD10,bmi_category_obesity
+E660,Obesity due to excess calories,ICD10,bmi_category_obesity
+E661,Drug-induced obesity,ICD10,bmi_category_obesity
+E662,Extreme obesity with alveolar hypoventilation,ICD10,bmi_category_obesity
+E668,Other obesity,ICD10,bmi_category_obesity
+E669,"Obesity, unspecified",ICD10,bmi_category_obesity
+E663,Overweight,ICD10,bmi_category_overweight
+R636,Underweight,ICD10,bmi_category_underweight

@@ -1,0 +1,670 @@
+""" 
+mythoslib v0.14 - Utility functions for cleaner data pipelines in the SDE. 
+Author: Stelios Boulitsakis Logothetis, University of Cambridge 
+
+Changelog:
+v0.1 2024-04-01: Initial commit of this library. 
+v0.2 2024-04-08: Implemented `table_exists` as a workaround for testing whether a database table exists given limited Hive permissions.
+v0.3 2024-04-09: Implemented `external_flag_parameter` for easily accessing (binary-valued) Databricks notebook parameters. 
+v0.4 2024-04-17: Implemented `map_column_with_dict` for easily mapping columns into new ones using a dictionary. 
+v0.5 2024-04-22: Updated `_codelist_match_1st_wide` to output the data source for each match in addition to dates and flags. Note: Altered the function signature as well (to make providing the original codelists optional).
+v0.51 2024-04-30: Amended `_codelist_match_1st_wide` to address bug introduced in last update. Erroneous columns were being created because the covariate names from the codelist union weren't being prepended with the provided naming prefix.
+v0.6 2024-05-24: Implemented polyfill for `withColumnsRenamed` method for the `pyspark.sql.DataFrame` class. This is bound to the class, so it can be called on any dataframe as `df.withColumnsRenamed()` after mythoslib is imported. 
+v0.61 2024-05-27: Added checks to `_codelist_match_all` and `_codelist_match_1st_wide` to raise exceptions if the inputted dataframes are empty (zero rows), as might happen if there is a bug in the exclusion criteria. 
+v0.7 2024-06-04: Bugfix in `censor_for_sde` - it now accounts for negative numbers greater than -10 without erroneously censoring them as +10.
+v0.8 2024-07-03: Implemented `external_parameter`, extending `external_flag_parameter` to parameters of any type rather than just booleans. 
+v0.9 2024-07-25: Implemented new `save_table` and `temp_save` functions to supersede the SHDS ones. 
+v0.10 2024-09-18: Implemented `fillna_column` extension method for the `pyspark.sql.DataFrame` class for filling NULLs with values taken from column(s) rather than static values as `DataFrame.na.fill` does. This is bound to the class, so it can be called on any dataframe as `df.fillna_column()` after mythoslib is imported. 
+v0.11 2024-09-19: Implemented `standardise` for normalising/standardising columns by subtracting their mean and scaling them to unit variance (i.e. dividing by the standard deviation).
+v0.12 2024-12-03: Updated `_codelist_match_1st_wide` to allow pre-specifying the resulting pivoted columns.  
+v0.13 2025-01-14: Implemented `table_completenes` for inspecting the completeness vs. missingness of dataframes.
+v0.14 2025-10-13: Fixed `reduce()` calls and `_codelist_match_1st_wide` following spark driver update
+v0.15 2025-10-21: Fixed DataFrame type 
+"""
+# Hive and Databricks context
+from pyspark.dbutils import DBUtils
+from pyspark.sql import SparkSession
+
+# Libraries/Functions
+import pyspark.sql.functions as f
+import pyspark.sql.types as t
+from pyspark.sql import Window
+from functools import reduce
+from itertools import chain
+from datetime import datetime
+import pandas as pd
+
+# ML features
+from pyspark.ml import Pipeline
+from pyspark.ml.feature import StandardScaler, VectorAssembler
+
+# Type hinting
+from typing import Iterable, Dict, Optional, Tuple, Iterator, Union, Any, Optional
+from numbers import Number
+from pyspark.sql import Column
+from pyspark.sql.connect.dataframe import DataFrame 
+from pyspark.sql.types import FloatType
+
+# Workaround for the fact that `pyspark.sql._typing` is not exported by the package. We define these types manually here
+PrimitiveType = Union[bool, float, int, str]
+ColumnOrName = Union[Column, str]
+
+# Error handling
+import warnings
+from py4j.protocol import Py4JJavaError
+
+# Obtain Hive context for use in the functions below
+_spark = SparkSession.builder.getOrCreate()
+
+# Obtain Databricks utilities
+_dbutils = DBUtils(_spark)
+
+
+def table_completeness(
+    df: DataFrame, subset: Optional[Iterable[str]] = None
+) -> pd.DataFrame:
+    """
+    Given a spark DataFrame and optionally a subset of columns, calculates the proportion of non-null values (i.e. the "completeness"), the inverse of which is the proportion of missing values (i.e. the "missingness").
+    The result is returned as a Pandas DataFrame with format (Column, Count, Completeness)
+    :param df: A spark DataFrame
+    :param subset: The column(s) to count. If not given, will apply to all columns in the DataFrame.
+    """
+    subset = subset or df.columns
+    # Magic query to obtain the completeness count of each given column
+    result = df.select(
+        [(f.count(f.when(f.col(c).isNotNull(), c))).alias(c) for c in subset]
+    )
+    # Transpose table to obtain counts as a column
+    result = (
+        result.toPandas()
+        .T.reset_index()
+        .rename(columns={"index": "Column", 0: "Count"})
+    )
+    # Take the fraction of the total records for each count
+    result["Completeness"] = (result["Count"] / df.count()).round(4)
+    # Sort by coverage descending
+    return result.sort_values("Completeness", ascending=False)
+
+
+def standardise(
+    df: DataFrame,
+    subset: Union[str, Iterable[str]],
+    withMean: bool = True,
+    withStd: bool = True,
+    suffix: Optional[str] = "_scaled",
+) -> DataFrame:
+    """
+    Given a spark DataFrame and a subset of columns, standardises the selected columns by removing the mean and scaling to unit variance using each column's summary statistics.
+    The standard score of a sample `x` from a column is calculated as: $z = (x- \mu) / \sigma$, where \mu is the column mean (or zero if $withMean=False) and \sigma is the column standard deviation (or one if $withStd=False).
+    The transformed columns are concatenated to the original DataFrame with provided suffix.
+    :param df: A spark DataFrame
+    :param subset: The column(s) to standardise. Can be passed either as a string (one column) or a list/tuple/iterable of strings
+    :param withMean: Whether to subtract the mean from each column
+    :param withStd: Whether to scale each column to unit variance
+    :param suffix: The suffix to add to the original name of each column to differentiate the new, standardised columns in the returned table
+    """
+    if isinstance(subset, str):
+        subset = [subset]
+    if suffix is None:
+        suffix = ""
+
+    # Set up standardisation pipeline
+    # For the transformer to work, data must be prepared as a vector. Define one VectorAssembler per $subset column that outputs the vectorised results into a temporary column
+    _assemblers = [
+        VectorAssembler(inputCols=[col], outputCol=f"_{col}_vec") for col in subset
+    ]
+    # Define the scalers. They take the temporary columns from the assemblers above and perform the standardisation. Formula is controlled using $withMean and #withStd
+    _scalers = [
+        StandardScaler(
+            inputCol=f"_{col}_vec",
+            outputCol=f"_{col}_scaled",
+            withMean=withMean,
+            withStd=withStd,
+        )
+        for col in subset
+    ]
+    # Put all transformers together into a pipeline
+    _pipeline = Pipeline(stages=_assemblers + _scalers)
+
+    # Execute standardisation of the inputted dataframe
+    df_scaled = _pipeline.fit(df).transform(df)
+
+    # Scaler results are stored in complex vector objects. The UDF expression below extracts just the values into a new column
+    first_element = f.udf(lambda vec: float(vec[0]), FloatType())
+    # We give the scaled columns their final name using the user-provided suffix
+    cols_scaled = [
+        first_element(f"_{col}_scaled").alias(f"{col}{suffix}") for col in subset
+    ]
+
+    # Finally, return all the original dataframe columns plus the extracted (& renamed) standardised values
+    return df_scaled.select(*df.columns, *cols_scaled)
+
+
+def save_table(
+    df: DataFrame,
+    out_name: str,
+    save_previous: bool = True,
+    database: str = "",
+) -> DataFrame:
+    """
+    Given a pyspark dataframe, saves it to the database with the specified name
+    :param df: The dataframe to persist.
+    :param out_name: The table name to use in the database. Should be all lowercase with no special characters except underscores.
+    :param save_previous: Whether to save the existing version of the table (if one exists) under a new name.
+    :param database: The schema to persist the dataframe to.
+    :returns: A reference to the newly persisted dataframe.
+    """
+    # Pre-define helper function for saving a given table
+    _save_dataframe = (
+        lambda _df, _path: _df.write.mode("overwrite")
+        .option("overwriteSchema", "True")
+        .saveAsTable(_path)
+    )
+
+    # Ensure that $df is a spark DataFrame
+    assert isinstance(df, DataFrame), "Provided df must be a pyspark DataFrame."
+
+    # Make out name all lowercase
+    if out_name.lower() != out_name:
+        print(f"Warning: {out_name} converted to lowercase")
+        out_name = out_name.lower()
+
+    # Save the previous version if it exists
+    if save_previous and table_exists(out_name, database):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        previous_out_name = f"{out_name}_pre{timestamp}".lower()
+        print(f"Saving previous version as {previous_out_name}")
+        _save_dataframe(
+            _spark.table(f"{database}.{out_name}"), f"{database}.{previous_out_name}"
+        )
+
+    # Save the table
+    print(f"Saving as {out_name}")
+    _save_dataframe(df, f"{database}.{out_name}")
+
+    # Repoint
+    _spark.sql(f"REFRESH TABLE {database}.{out_name}")
+    return _spark.table(f"{database}.{out_name}")
+
+
+def temp_save(
+    df: DataFrame, out_name: str, database: str = ""
+) -> DataFrame:
+    """Given a pyspark dataframe, saves it to the database without preserving the previous version that was already saved (if one exists)."""
+    return save_table(df, out_name=out_name, save_previous=False, database=database)
+
+
+def withColumnsRenamed(self: DataFrame, names: Dict[str, str]) -> DataFrame:
+    """
+    Polyfill for the withColumnsRenamed method of spark.DataFrame introduced in pyspark 3.4.0
+    Should be bound to the pyspark.sql.DataFrame class.It can then be called as `df.withColumnsRenamed()` on any dataframe after mythoslib is imported
+    :param self: Spark DataFrame
+    :param names: Dictionary with old names as keys and new names as values
+    :returns: DataFrame with updated names. Column names not present in the `names` dictionary are left unchanged
+    """
+    return self.select([f.col(c).alias(names.get(c, c)) for c in self.columns])
+
+
+# Bind the above definition `withColumnsRenamed` to the spark.sql.DataFrame class as a method
+DataFrame.withColumnsRenamed = withColumnsRenamed
+
+
+def fillna_column(
+    self: DataFrame,
+    target: Union[ColumnOrName, Iterable[ColumnOrName]],
+    subset: Optional[Union[str, Iterable[str]]] = None,
+) -> DataFrame:
+    """
+    Extension for spark.DataFrame to allow filling NULLs in column(s) with another column, rather than requiring a static value like `spark.DataFrame.na.fill` does
+    Should be bound to the `pyspark.sql.DataFrame class. It can then be called as `df.fullna_column()` on any dataframe after mythoslib is imported
+    :param self: Spark DataFrame
+    :param target: The column(s) with which to fill NULLs. Can be passed either as a column name (string), a `spark.sql.Column` object, or an list/tuple/iterable of either. The order of preference is the order they're given in
+    :param subset: The column(s) whose NULLs we want to fill. Can be passed either as a string (single column) or any list/tuple/iterable of strings
+    """
+    if subset is None:
+        subset = self.columns
+    elif isinstance(subset, str):
+        subset = [subset]
+
+    if isinstance(target, str):
+        target = [f.col(target)]
+    elif isinstance(target, Column):
+        target = [target]
+
+    return self.select(
+        [f.coalesce(c, *target).alias(c) if c in subset else c for c in self.columns]
+    )
+
+
+# Bind the above definition `fillna_column` to the spark.sql.DataFrame class as a method
+DataFrame.fillna_column = fillna_column
+
+
+def map_column_with_dict(
+    column: Column, mapping: Dict[Any, Any], ignore_missing: bool = True
+) -> Column:
+    """A table column and a dictionary, maps the values into a new column by looking them up in the dictionary.
+    Use like so: df.withColumn('new_column', map_dict(f.col('old_column'), my_dictionary))
+    :param ignore_missing: If False, any values that aren't present as keys in the dictionary will be left as NULLs. If True, the original values will be copied over.
+    """
+    mapping_expr = f.create_map([f.lit(x) for x in chain(*mapping.items())])
+    result = mapping_expr[column]
+    if ignore_missing:
+        return f.coalesce(result, column)
+    return result
+
+
+def external_flag_parameter(name: str, default: bool = False) -> bool:
+    """Utility function for notebooks in Databricks.
+    Lets us easily define binary/boolean/flag variables that we want to pass to the notebook as external parameters (when launching it as a Databricks job).
+    Use it as:
+        MY_NEW_PARAMETER = external_flag_parameter('MY_NEW_PARAMETERS_NAME', default=my_parameters_default_value)
+    Attempts to match the parameter value passed to the notebook by Databricks with a number of "truth-y" values (such as 1, "1", "true", "yes") or "false-y" values (such as 0, "0", "false", "no").
+    Returns the value given in the `default` argument if no such match is found OR if the parameter isn't passed to the notebook at all.
+    """
+
+    param_value = external_parameter(name, default)
+
+    # Try our best to match the provided parameter value (given as a string but you never know) to an obvious True or False value
+    if param_value in [1, True, "1", "1.0", "True", "true", "yes", "Yes", "Y", "y"]:
+        return True
+    elif param_value in [0, False, "0", "0.0", "False", "false", "no", "No", "N", "n"]:
+        return False
+    else:
+        return default
+
+
+def external_parameter(name: str, default: Any) -> Any:
+    """Utility function for notebooks in Databricks.
+    Lets us easily define any type of variables that we want to pass to the notebook as external parameters (when launching it as a Databricks job).
+    Use it as:
+        MY_NEW_PARAMETER = external_flag_parameter('MY_NEW_PARAMETERS_NAME', default=my_parameters_default_value)
+    Returns the value given in the `default` argument if no such match is found OR if the parameter isn't passed to the notebook at all.
+    """
+    # Attempt to get the named parameter from Databricks job parameters (when running the entire pipeline)
+    try:
+        param_value = _dbutils.widgets.get(name)
+    # If not set in Databricks, return the given default value.
+    except Py4JJavaError:
+        return default
+    if param_value is not None:
+        return param_value
+    return default
+
+
+def table_exists(table_name: str, db_name: str) -> bool:
+    """Checks whether a table with the given name exists in the specified database.
+    Workaround for NHS SDE Hive permissions that don't allow using spark.catalog.tableExists for some reason
+    CAREFUL: A proper parameterised query won't work when we want the database name to be a parameter. So, I'm trusting you not to SQL inject yourself.
+    """
+    count = _spark.sql(f'SHOW TABLES IN {db_name} LIKE "{table_name}"').count()
+    if count not in [0, 1]:
+        raise ValueError(
+            "Got multiple matches for the same table name. Please check a different way."
+        )
+    return bool(count)
+
+
+def join_all(*dfs: DataFrame, how: str, on: str) -> DataFrame:
+    """Helper function for compound joins. Given multiple dataframes *as positional args*, and "how", "on" join parameters,
+    Joins all the given dataframes in sequence, according to the given parameters
+    """
+    return reduce(lambda x, y: x.join(y, how=how, on=on), dfs)
+
+
+# Iterator[...] type here refers to Generator expressions that yield only
+def any_condition_holds(
+    conditions: Union[Iterable[Column], Iterator[Column]]
+) -> Column:
+    """Given a list or generator expression that evaluates into an iterable of boolean columns,
+    Returns a column with True at each row where ANY of the inputted conditions are True.
+    Thus, simulates calls to any(...)
+    """
+    return f.greatest(*list(conditions)) == True
+
+
+def all_conditions_hold(
+    conditions: Union[Iterable[Column], Iterator[Column]]
+) -> Column:
+    """Given a list or generator expression that evaluates into an iterable of boolean columns,
+    Returns a column with True at each row where ALL of the inputted conditions are True.
+    Thus, simulates calls to all(...)
+    """
+    return f.least(*list(conditions)) == True
+
+
+def _codelist_match_all(
+    datasets: Dict[str, Tuple[DataFrame, DataFrame, int]]
+) -> DataFrame:
+    """Given a datasets dictionary with format {dataset_name: (dataset_frame, codelist_frame, ordering_index)},
+    Matches the datasets with their codelists, resolving ties via the given ordering index.
+    Returns all matches across all datasets
+    """
+    # Stack all codelists together
+    codelists = [
+        codelist.withColumn("source", f.lit(key))
+        for key, (_, codelist, _) in datasets.items()
+    ]
+    codelist_union = reduce(lambda a, b: a.unionByName(b, allowMissingColumns=True), codelists).select(
+        ["source", "code", "name"]
+    )
+
+    # Prepare datasets with source attribution and ordering index for breaking ties
+    datasets_prepared = (
+        dataset
+        # Add source and order
+        .withColumn("source", f.lit(key)).withColumn("sourcen", f.lit(order))
+        for key, (dataset, codelist, order) in datasets.items()
+    )
+
+    # Stack all the datasets for joining
+    dataset_union = reduce(lambda a, b: a.unionByName(b, allowMissingColumns=True), datasets_prepared)
+
+    # Ensure we have a non-empty dataset
+    if dataset_union.count() == 0:
+        raise ValueError("All provided datasets are empty.")
+
+    # Match the datasets and codelists
+    result = dataset_union.join(codelist_union, on=["source", "code"], how="inner")
+
+    return result
+
+
+def _codelist_match_filter_time_windows(
+    datasets: Dict[str, Tuple[DataFrame, DataFrame, int]],
+    matched_all: DataFrame,
+    censor_windows: Dict[str, Tuple[int, int]],
+    baseline_date: str,
+) -> DataFrame:
+    """Given a datasets dictionary with format {dataset_name: (dataset_frame, codelist_frame, ordering_index)},
+    And, A dictionary of covariate-specific time windows with format: Key is the name of a covariate (should match the codelist) and value is a tuple of integers, counting months from the baseline date.
+    Matches the datasets with their codelists, resolving ties via the given ordering index and restricts the results to fall within the covariate-specific time windows.
+    Returns all matches across all datasets.
+    """
+    # Convert the time window dictionary into a dataframe suitable for JOINs
+
+    df_windows = _spark.createDataFrame(
+        pd.DataFrame.from_dict(
+            censor_windows,
+            orient="index",
+            columns=["CENSOR_DATE_START", "CENSOR_DATE_END"],
+        ).reset_index()
+    )
+    df_windows = (
+        df_windows.withColumnRenamed("index", "name")
+        .withColumn(
+            "CENSOR_DATE_START",
+            f.add_months(f.lit(baseline_date), f.col("CENSOR_DATE_START")),
+        )
+        .withColumn(
+            "CENSOR_DATE_END",
+            f.add_months(f.lit(baseline_date), f.col("CENSOR_DATE_END")),
+        )
+    )
+
+    # Invoke codelist_match_all to do most of the matching. We will then filter that result
+    result = _codelist_match_all(datasets)
+
+    # Filter with covariate-specific time windows
+    result = (
+        result.drop("CENSOR_DATE_START", "CENSOR_DATE_END")
+        .join(df_windows, on="name", how="outer")
+        .where(
+            (f.col("DATE") > f.col("CENSOR_DATE_START"))
+            & (f.col("DATE") <= f.col("CENSOR_DATE_END"))
+        )
+    )
+
+    return result
+
+
+def _codelist_match_1st(
+    matching_all: DataFrame,
+    latest_event: bool = False,
+) -> DataFrame:
+    """Given the results of matching dataset(s) to codelist(s) from `codelist_match_all()`,
+    produces the long-format table of the first matching record per covariate per patient ID. (PERSON_ID, name, code, DATE)
+    Resolves ties via the provided ordering index of datasets during the call to `codelist_match_filtered`
+    """
+    # Window for first or latest event of each name
+    if latest_event:
+        matching_window = Window.partitionBy(["PERSON_ID", "name"]).orderBy(
+            f.desc("DATE"), "sourcen", "code"
+        )
+    else:
+        matching_window = Window.partitionBy(["PERSON_ID", "name"]).orderBy(
+            "DATE", "sourcen", "code"
+        )
+
+    # Filter to keep only first event of each name
+    matching_1st = (
+        matching_all.withColumn("_row_num", f.row_number().over(matching_window))
+        .where(f.col("_row_num") == 1)
+        .select("PERSON_ID", "DATE", "name", "source", "sourcen", "code")
+    )
+
+    return matching_1st
+
+
+def _codelist_match_1st_wide(
+    matching_1st: DataFrame,
+    name_prefix: str,
+    datasets: Optional[Dict[str, Tuple[DataFrame, DataFrame, int]]] = None,
+    pivot_columns: Optional[Iterable[str]] = None
+) -> DataFrame:
+    """Given the first matching record per covariate per patient ID from `codelist_match_1st()` and the complete codelist that was used,
+    produces the wide-format table of the first matching record per covariate per patient ID. (PERSON_ID, cov_{name}_flag, cov_{name}_date, ...)
+    Prefixes the covariate names with the given $name_prefix.
+    """
+    df = matching_1st
+
+    if df.count() == 0:
+        raise ValueError("Inputted dataframe contains zero rows. Cannot pivot.")
+
+    # If the original codelists have been provided, we join them into the working table
+    # This ensures that every recognised name/covariate has a column created for it even if it has zero matches
+    if datasets is not None:
+        # Put all the codelist names in once table
+        codelists = [codelist for (_, codelist, _) in datasets.values()]
+        codelist_union = (
+            reduce(lambda a, b: a.unionByName(b, allowMissingColumns=True), codelists).select("name").distinct()
+        )
+
+        # Add the codelist to ensure every recognised name has a column created even if it has zero matches
+        df = df.join(codelist_union, on="name", how="outer")
+
+    # Prefix the covariate names with the given prefix
+    df = df.withColumn("name", f.concat(f.lit(name_prefix), f.lower(f.col("name"))))
+
+    # Reshape to wide format. Pivot columns will contain the dates of the earliest matched record per covariate, the corresponding data source, and a binary flag
+    result = (
+        df.groupBy("PERSON_ID")
+        .pivot("name", values=pivot_columns)
+        .agg(
+            f.first("DATE").alias("date"),
+            f.first("source").alias("source"),
+            f.count(f.lit(1)).cast(t.IntegerType()).alias("flag"),
+        )
+        .where(f.col("PERSON_ID").isNotNull())
+    )
+
+    # The resulting table contains the PERSON_ID and covariate dates, sources, and flags only.
+    return result
+
+
+def codelist_match_summary(
+    datasets: Dict[str, Tuple[DataFrame, DataFrame, int]], matching_all: DataFrame
+):
+    """
+    Given the results of matching a codelist to a set of datasets (from codelist_match_v3) and the input dictionary used for generating this matching (the same one passed to codelist_match-v3),
+    Summarises the results of matching the codelist to the datasets. Returns two summary tables as DataFrames:
+     - by_name: (name, n_all, n_id_all, n_{dataset 1}, n_id_{dataset 1}, n_{dataset 2}, ...)
+        - Summarises how many matches each distinct name had across all the datasets AND in each dataset specifically.
+     - by_code: (name, source, code, terminology, term, n, n_id)
+        - Summarises how many matches each distinct code had within the dataset it was meant for (per the input parameters)
+    """
+
+    # Prepare tables containing all distinct codelist names and codes, respectively
+    # We will use these to fill in the summaries with zero-value entries wherever a code/name wasn't matched at all in the dataset
+    codelists = [
+        codelist.withColumn("source", f.lit(key))
+        for key, (_, codelist, _) in datasets.items()
+    ]
+    all_names, all_codes = (
+        reduce(lambda a, b: a.unionByName(b, allowMissingColumns=True), codelists).select("name").distinct(),
+        reduce(lambda a, b: a.unionByName(b, allowMissingColumns=True), codelists)
+        .select("name", "code", "source", "terminology", "term")
+        .distinct(),
+    )
+
+    # Dictionary with dataset-specific subsets of the full matching table
+    # I.e. (dataset name: subset of matchings originating from that dataset)
+    dataset_subsets = {
+        source: matching_all.where(f.col("source") == source) for source in datasets
+    }
+    # For summarising by name, we include an "all" item that encompasses all matches
+    matchings_by_name = dataset_subsets | {"all": matching_all}
+
+    ##### Summarise by name #####
+    # We define a sub-function for summarising a given matching by name
+    # The results are stored in columns named after the matching key, provided alongside the frame
+    # E.g. summarise_by_name("gdppr", matching_gdppr) -> (name, n_gdppr, n_id_gdppr)
+    summarise_by_name = lambda key, df: (
+        df.groupby("name").agg(
+            f.count(f.lit(1)).alias(f"n_{key}"),
+            f.countDistinct(f.col("PERSON_ID")).alias(f"n_id_{key}"),
+        )
+    )
+
+    # Apply the above function to the dataset matching subset dictionary, plus the 'all' item (dataframe of all matchings across datasets)
+    # Then outer join all the results with each other
+    by_name = reduce(
+        lambda x, y: x.join(y, how="outer", on="name"),
+        (summarise_by_name(key, df) for key, df in matchings_by_name.items()),
+    )
+
+    # Fill in any names from the codelist that had zero matches
+    by_name = (by_name.join(all_names, on="name", how="outer")).fillna(0)
+
+    ##### Summarise by code #####
+    # We define a sub-function for summarising a given matching by name
+    # The results are stored in fixed-name columns
+    # The subset key is stored in a dedicated 'source' column
+    # E.g. summarise_by_name("gdppr", matching_gdppr) -> (name, n, n_id, source [="gdppr"])
+    summarise_by_code = lambda key, df: (
+        df.groupby("name", "code")
+        .agg(
+            f.count(f.lit(1)).alias("n"),
+            f.countDistinct(f.col("PERSON_ID")).alias("n_id"),
+        )
+        .withColumn("source", f.lit(key))
+    )
+
+    # Apply the above function to the dataset matching subset dictionary
+    # Then stack all the results with each other (via unionByName)
+    by_code = reduce(
+        lambda a, b: a.unionByName(b, allowMissingColumns=True),
+        (summarise_by_code(key, df) for key, df in dataset_subsets.items())
+    )
+
+    # Fill in any names from the codelist that had zero matches AND
+    # Augment with code descriptions and terminologies from the codelist
+    by_code = (
+        by_code.join(all_codes, on=["name", "code", "source"], how="outer")
+    ).fillna(0)
+
+    # Do some cosmetic orderings and selections and return
+    return (
+        by_name.orderBy("n_all", ascending=False),
+        by_code.select(
+            "name", "source", "code", "terminology", "term", "n", "n_id"
+        ).orderBy("n", ascending=False),
+    )
+
+
+def codelist_match_v3(
+    datasets: Dict[str, Tuple[DataFrame, DataFrame, int]],
+    name_prefix: str,
+    latest_event: bool = False,
+):
+    """Matches datasets with codelists.
+    :param datasets: A parameter dictionary in the format:
+        {dataset name (string): (
+            dataset (DataFrame),
+            codelist (DataFrame),
+            ordering index (integer)
+        )}
+    :param name_prefix: Prefix for the covariate columns in the wide-format output table.
+    :param latest_event: A flag that determines whether we take the first occurrence or the latest occurrence for each matched covariate.
+    :returns (matching_out, matching_1st, matching_1st_wide):
+        matching_out: Complete matching table, giving all matched records across the given datasets, within the given covariate-specific dates
+        matching_1st: Long-format table of the earliest matched record (within the filter dates) per covariate per person. (PERSON_ID, name, code, DATE)
+        matching_1st_wide: Wide-format table of the earliest matched record (within the filter dates) per covariate per person. (PERSON_ID, cov_{name}_flag, cov_{name}_date, ...)
+    """
+
+    # Main: Match the datasets and codelist
+    matching_all = _codelist_match_all(datasets)
+
+    # Main: Obtain the 1st match in long and wide format
+    matching_1st = _codelist_match_1st(matching_all, latest_event)
+    matching_1st_wide = _codelist_match_1st_wide(matching_1st, name_prefix, datasets)
+
+    return matching_all, matching_1st, matching_1st_wide
+
+
+def codelist_match_v3_time_filtered(
+    datasets: Dict[str, Tuple[DataFrame, DataFrame, int]],
+    name_prefix: str,
+    censor_windows: Dict[str, Tuple[int, int]],
+    baseline_date: str,
+    latest_event: bool = False,
+):
+    """Matches datasets with codelists.
+    :param datasets: A parameter dictionary in the format:
+        {dataset name (string): (
+            dataset (DataFrame),
+            codelist (DataFrame),
+            ordering index (integer)
+        )}
+    :param name_prefix: Prefix for the covariate columns in the wide-format output table.
+    :param censor_windows: A dictionary of covariate-specific time windows. Key is the name of a covariate (should match the codlist) and value is a tuple of integers, counting months from the baseline date. Matching will restricted to records between the start and end date given by these offsets.
+    :param baseline_date: The baseline date/study start date, for use in filtering. Used in conjunction with the $censor_windows parameter to ensure covariate values are within a certain window from baseline.
+    :param latest_event: A flag that determines whether we take the first occurrence or the latest occurrence for each matched covariate.
+    :returns (matching_out, matching_1st, matching_1st_wide):
+        matching_out: Complete matching table, giving all matched records across the given datasets, within the given covariate-specific dates
+        matching_1st: Long-format table of the earliest matched record (within the filter dates) per covariate per person. (PERSON_ID, name, code, DATE)
+        matching_1st_wide: Wide-format table of the earliest matched record (within the filter dates) per covariate per person. (PERSON_ID, cov_{name}_flag, cov_{name}_date, ...)
+    """
+
+    # Main: Match the datasets and codelist
+    matching_all = _codelist_match_all(datasets)
+
+    matching_all = _codelist_match_filter_time_windows(
+        datasets, matching_all, censor_windows, baseline_date
+    )
+
+    # Main: Obtain the 1st match in long and wide format
+    matching_1st = _codelist_match_1st(matching_all, latest_event)
+    matching_1st_wide = _codelist_match_1st_wide(matching_1st, name_prefix, datasets)
+
+    return matching_all, matching_1st, matching_1st_wide
+
+
+def censor_for_sde(x: Number) -> int:
+    """Given any numerical value, censors it according to the SDE data export rules"""
+    # 0 remains 0
+    if x == 0:
+        return 0
+
+    # Anything below 10 becomes 10
+    if abs(x) < 10:
+        if x < 0:
+            return -10
+        return 10
+
+    # Anything over 10 is rounded to nearest 5
+    if abs(x) >= 10:
+        return 5 * round(x / 5)
+
+    # This state shouldn't be reachable, but raising an exception just in case
+    raise ValueError()

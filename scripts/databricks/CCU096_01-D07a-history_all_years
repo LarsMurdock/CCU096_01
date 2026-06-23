@@ -1,0 +1,1269 @@
+# Databricks notebook source
+# MAGIC %md # CCU069_01-D07a-history_all_years
+# MAGIC  
+# MAGIC **Description** This notebook collects the established obesity history for the cohort with NO cut-off for the lookback period (i.e. people can have their first obesity record at any time ever).
+# MAGIC  
+# MAGIC **Authors** Stelios Boulitsakis Logothetis
+# MAGIC  
+# MAGIC 
+# MAGIC
+# MAGIC **Acknowledgements** Based on previous work by the Health Data Science Team, BHF Data Science Centre and by Carmen Petitjean, Spencer Keene for CCU004_03.
+# MAGIC
+# MAGIC **Data Output**
+# MAGIC - **`tmp_history_all`** : table of all individuals' medical history
+# MAGIC - **`tmp_history_wide`** : wide-format version of everyone's obesity history (including a 3-month lookforward period), giving indicators, dates, and sources for the earliest obesity events. 
+
+# COMMAND ----------
+
+# MAGIC %md # 0. Setup
+
+# COMMAND ----------
+
+# DBTITLE 1,Libraries
+import pyspark.sql.functions as f
+from pyspark.sql import Window
+from pyspark.sql import Column, DataFrame
+
+# COMMAND ----------
+
+# DBTITLE 1,Functions
+# MAGIC %run "/Workspace/Shared/SHDS/common/functions"
+
+# COMMAND ----------
+
+# MAGIC %md # 1. Parameters
+
+# COMMAND ----------
+
+# MAGIC %run "./CCU096_01-D01-parameters"
+
+# COMMAND ----------
+
+# MAGIC %md # 2. Data Sources
+
+# COMMAND ----------
+
+# DBTITLE 1,Import data sources
+# Results of previous inclusion/exclusion
+qa = spark.table(Paths.tmp_quality_assurance)
+skinny = spark.table(Paths.cur_skinny)
+inc_exc = spark.table(Paths.tmp_inc_exc_cohort)
+
+# Sources for matching prior obesity
+codelist_obesity_history  = spark.table(Paths.out_codelist_obesity_history)
+# For identifying people with BMI >= 30
+codelist = spark.table(Paths.out_codelist_covariates_markers)
+
+# Data
+hes_apc_long  = spark.table(Paths.cur_hes_apc_long)
+hes_op_long = spark.table(Paths.cur_hes_op_long)
+gdppr = load_dataset_batch('gdppr')
+
+# Pregnancy data
+dbc = f''
+maternity_exclusions = spark.table(f'{dbc}.ccu096_hes_mother_linked')
+
+# COMMAND ----------
+
+# MAGIC %md # 3. Prepare
+# MAGIC
+# MAGIC We take the subset of the complete skinny table that passed the QA checks (including non-null DOB and sex). 
+# MAGIC We then inner join this subset of the skinny table with GDPPR and HES, and match the CVD (HX) codelist with those two datasets. 
+# MAGIC This saves us a lot of time (vs. doing this on the full skinny table), because it means we don't match the codelist for records we would exclude anyway. 
+# MAGIC
+
+# COMMAND ----------
+
+cohort = (
+    inc_exc
+    .select('PERSON_ID', 'date_of_birth')
+    # Select the subset of the skinny table that passed the quality assurance
+    .join(qa.select('PERSON_ID', '_rule_total'), on='PERSON_ID', how='inner')
+    .where(f.col('_rule_total').isNull())
+)
+
+# COMMAND ----------
+
+# DBTITLE 1,Prepare HES-APC for codelist matching
+#_age_at_baseline = f.datediff('DATE', 'date_of_birth')/365.25
+#start_date = f.add_months(f.to_date(f.lit(Project.study_start_date)), 3)
+hes_apc_prepared = (
+    hes_apc_long
+    # Load HES-APC (long, curated) into standard format
+    .select('PERSON_ID', 'EPISTART', 'CODE')
+    .withColumnRenamed('EPISTART', 'DATE')
+
+    # Inner join GDPPR and the post inclusion-exclusion (so far) PERSON_IDs and obtain dates of birth
+    .join(cohort.select('PERSON_ID', 'date_of_birth'), on='PERSON_ID', how='inner')
+
+    # Dynamic Filter on dates - participant must be aged 14 <= age < 100 at the time of each record
+    .withColumn('_age_at_record_date', f.datediff(f.col('DATE'), f.col('date_of_birth'))/365.25)
+    .where(
+        (f.col('DATE').isNotNull()) & 
+        (f.col('_age_at_record_date') >= 10) & 
+        (f.col('_age_at_record_date') < 100)
+    )
+    # Static Filter on dates - must be after DOB
+    .where(
+        (f.col('DATE').isNotNull()) & 
+    #   (f.col('DATE') < Project.study_start_date) & 
+        (f.col('DATE') >= f.col('date_of_birth'))
+    )
+)
+
+# Save
+save_table(df=hes_apc_prepared, out_name=f'{Project.name}_tmp_hes_apc_prepared', save_previous=False)
+
+# COMMAND ----------
+
+# DBTITLE 1,Prepare HES-OP for codelist matching
+#_age_at_baseline = f.datediff('DATE', 'date_of_birth')/365.25
+#start_date = f.add_months(f.to_date(f.lit(Project.study_start_date)), 3)
+hes_op_prepared = (
+    hes_op_long
+    # Load HES-APC (long, curated) into standard format
+    .select('PERSON_ID', 'APPTDATE', 'CODE')
+    .withColumnRenamed('APPTDATE', 'DATE')
+
+    # Inner join GDPPR and the post inclusion-exclusion (so far) PERSON_IDs and obtain dates of birth
+    .join(cohort.select('PERSON_ID', 'date_of_birth'), on='PERSON_ID', how='inner')
+
+    # Dynamic Filter on dates - participant must be aged 14 <= age < 100 at the time of each record
+    .withColumn('_age_at_record_date', f.datediff(f.col('DATE'), f.col('date_of_birth'))/365.25)
+    .where(
+        (f.col('DATE').isNotNull()) & 
+        (f.col('_age_at_record_date') >= 10) & 
+        (f.col('_age_at_record_date') < 100)
+    )
+    # Static Filter on dates - must be after DOB
+    .where(
+        (f.col('DATE').isNotNull()) & 
+    #   (f.col('DATE') < Project.study_start_date) & 
+        (f.col('DATE') >= f.col('date_of_birth'))
+    )
+)
+
+# Save
+save_table(df=hes_op_prepared, out_name=f'{Project.name}_tmp_hes_op_prepared', save_previous=False)
+
+# COMMAND ----------
+
+# DBTITLE 1,Prepare GDPPR for codelist matching
+#_age_at_baseline = f.datediff('DATE', 'date_of_birth')/365.25
+#start_date = f.add_months(f.to_date(f.lit(Project.study_start_date)), 3)
+gdppr_prepared = (
+    gdppr
+    # Load HES-APC (long, curated) into standard format
+    .select('NHS_NUMBER_DEID', 'DATE', 'CODE')
+    .withColumnRenamed('NHS_NUMBER_DEID', 'PERSON_ID')
+
+    # Inner join GDPPR and the post inclusion-exclusion (so far) PERSON_IDs and obtain dates of birth
+    .join(cohort.select('PERSON_ID', 'date_of_birth'), on='PERSON_ID', how='inner')
+
+    # Dynamic Filter on dates - participant must be aged 14 <= age < 100 at the time of each record
+    .withColumn('_age_at_record_date', f.datediff(f.col('DATE'), f.col('date_of_birth'))/365.25)
+    .where(
+        (f.col('DATE').isNotNull()) & 
+        (f.col('_age_at_record_date') >= 10) & 
+        (f.col('_age_at_record_date') < 100)
+    )
+    # Static Filter on dates - must be after DOB
+    .where(
+        (f.col('DATE').isNotNull()) & 
+    #   (f.col('DATE') < Project.study_start_date) & 
+        (f.col('DATE') >= f.col('date_of_birth'))
+    )
+    .distinct()
+)
+
+# Save
+gdppr_prepared = save_table(df=gdppr_prepared, out_name=f'{Project.name}_tmp_gdppr_prepared', save_previous=False)
+
+# COMMAND ----------
+
+# DBTITLE 1,Load (if re-running)
+hes_apc_prepared  = spark.table(Paths.tmp_hes_apc_prepared)
+hes_op_prepared   = spark.table(Paths.tmp_hes_op_prepared)
+gdppr_prepared    = spark.table(Paths.tmp_gdppr_prepared)
+
+# COMMAND ----------
+
+# MAGIC %md # 4. Create
+
+# COMMAND ----------
+
+# MAGIC %md ## 4.1 Codelist Matching
+# MAGIC
+# MAGIC We match codes in any position in the complete HES-APC/HES-OP/GDPPR records.
+
+# COMMAND ----------
+
+# DBTITLE 1,Match obesity history codelists against datasets
+from mythoslib import codelist_match_v3, codelist_match_summary
+
+# dictionary - dataset, codelist, and ordering in the event of tied records
+dict_in = {
+      'gdppr': [gdppr_prepared, codelist_obesity_history, 1],
+    'hes_apc': [hes_apc_prepared, codelist_obesity_history, 2],
+     'hes_op': [hes_op_prepared, codelist_obesity_history, 3],
+}
+
+# run codelist match and codelist match summary functions
+# Obtain tables in the form (PERSON_ID, source={gdppr OR hes_apc}, code={an ICD or SNOMED code})
+# hx_match_all gives all the matches (of record to codelist) for all PERSON_IDs across all datasets
+# hx_match_1st gives the first match chronologically per PERSON_ID and which dataset it came from 
+# hx_match_1st_wide gives the same in wide form (PERSON_ID, cov_ischaemic_flag, cov_tia_flag, cov_stroke_flag, etc)
+hx_match_all, hx_match_1st, hx_match_1st_wide = codelist_match_v3(dict_in, name_prefix='cov_hx_')
+hx_match_summ_name, hx_match_summ_name_code = codelist_match_summary(dict_in, hx_match_all)
+
+# temp save
+hx_match_all = temp_save(df=hx_match_all, out_name=f'{Project.name}_tmp_hx_match_all')
+hx_match_1st = temp_save(df=hx_match_1st, out_name=f'{Project.name}_tmp_hx_match_1st')
+hx_match_1st_wide = temp_save(df=hx_match_1st_wide, out_name=f'{Project.name}_tmp_hx_match_1st_wide')
+hx_match_summ_name = temp_save(df=hx_match_summ_name, out_name=f'{Project.name}_tmp_hx_match_summ_name')
+hx_match_summ_name_code = temp_save(df=hx_match_summ_name, out_name=f'{Project.name}_tmp_hx_match_summ_name_code')
+
+# COMMAND ----------
+
+# DBTITLE 1,Load (if re-running)
+hx_match_all = spark.table(f'{Project.dsa}.{Project.name}_tmp_hx_match_all')
+hx_match_1st = spark.table(f'{Project.dsa}.{Project.name}_tmp_hx_match_1st')
+hx_match_1st_wide = spark.table(f'{Project.dsa}.{Project.name}_tmp_hx_match_1st_wide')
+hx_match_summ_name = spark.table(f'{Project.dsa}.{Project.name}_tmp_hx_match_summ_name')
+
+# COMMAND ----------
+
+# Save hx_match_all for Venn diagram
+# display(hx_match_all)
+save_table(df=hx_match_all, out_name=f'{Project.name}_tmp_obesity_codes_all_venn_diagram', save_previous=True)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Do the same for the pregnant women (excluding measurements during pregnancy)
+
+# COMMAND ----------
+
+mat2 = maternity_exclusions.select(f.col("person_id_mother_deid").alias('PERSON_ID'), "exclusion_start", "exclusion_end")
+
+cond_hes_apc = (
+    (hes_apc_prepared.PERSON_ID == mat2.PERSON_ID) &
+    (hes_apc_prepared.DATE >= mat2.exclusion_start) &
+    (hes_apc_prepared.DATE <= mat2.exclusion_end)
+)
+
+hes_apc_prepared_preg = (
+    hes_apc_prepared.join(mat2, how='left_anti', on=cond_hes_apc)
+)
+
+cond_hes_op = (
+    (hes_op_prepared.PERSON_ID == mat2.PERSON_ID) &
+    (hes_op_prepared.DATE >= mat2.exclusion_start) &
+    (hes_op_prepared.DATE <= mat2.exclusion_end)
+)
+
+hes_op_prepared_preg = (
+    hes_op_prepared.join(mat2, how='left_anti', on=cond_hes_op)
+)
+
+cond_gdppr = (
+    (gdppr_prepared.PERSON_ID == mat2.PERSON_ID) &
+    (gdppr_prepared.DATE >= mat2.exclusion_start) &
+    (gdppr_prepared.DATE <= mat2.exclusion_end)
+)
+
+gdppr_prepared_preg = (
+    gdppr_prepared.join(mat2, how='left_anti', on=cond_gdppr)
+)
+
+# COMMAND ----------
+
+from mythoslib import codelist_match_v3, codelist_match_summary
+
+# dictionary - dataset, codelist, and ordering in the event of tied records
+dict_in_preg = {
+      'gdppr': [gdppr_prepared_preg, codelist_obesity_history, 1],
+    'hes_apc': [hes_apc_prepared_preg, codelist_obesity_history, 2],
+     'hes_op': [hes_op_prepared_preg, codelist_obesity_history, 3],
+}
+
+# run codelist match and codelist match summary functions
+# Obtain tables in the form (PERSON_ID, source={gdppr OR hes_apc}, code={an ICD or SNOMED code})
+hx_match_all_preg, hx_match_1st_preg, hx_match_1st_wide_preg = codelist_match_v3(dict_in_preg, name_prefix='cov_hx_')
+# hx_match_summ_name, hx_match_summ_name_code = codelist_match_summary(dict_in, hx_match_all)
+
+# temp save
+hx_match_all_preg = temp_save(df=hx_match_all_preg, out_name=f'{Project.name}_tmp_hx_match_all_preg')
+hx_match_1st_preg = temp_save(df=hx_match_1st_preg, out_name=f'{Project.name}_tmp_hx_match_1st_preg')
+hx_match_1st_wide_preg = temp_save(df=hx_match_1st_wide_preg, out_name=f'{Project.name}_tmp_hx_match_1st_wide_preg')
+# hx_match_summ_name = temp_save(df=hx_match_summ_name, out_name=f'{Project.name}_tmp_hx_match_summ_name')
+#***REMOVED***hx_match_summ_name_code = temp_save(df=hx_match_summ_name, out_name=f'{Project.name}_tmp_hx_match_summ_name_code')
+
+# COMMAND ----------
+
+hx_match_all_preg = spark.table(f'{Project.dsa}.{Project.name}_tmp_hx_match_all_preg')
+hx_match_1st_preg = spark.table(f'{Project.dsa}.{Project.name}_tmp_hx_match_1st_preg')
+hx_match_1st_wide_preg = spark.table(f'{Project.dsa}.{Project.name}_tmp_hx_match_1st_wide_preg')
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 4.2 Identify individuals with BMI >= 30
+# MAGIC
+# MAGIC As suggested by Stelios, I have copied the BMI extraction code from the "covariates_markers" and will identify all individuals with the correct BMI threshold.
+
+# COMMAND ----------
+
+# DBTITLE 1,Prepare codelist for BMI
+codelist_prepared = (
+    codelist
+    .where(f.col('name').isin('bmi')) 
+)
+
+# COMMAND ----------
+
+# DBTITLE 1,Prepare GDPPR data with BMI values for codelist matching
+gdppr_prepared = (
+    gdppr
+    .select(f.col('NHS_NUMBER_DEID').alias('PERSON_ID'), 'DATE', 'CODE', 'VALUE1_CONDITION', 'VALUE2_CONDITION')
+    .where(f.col('PERSON_ID').isNotNull() & f.col('DATE').isNotNull())  
+    .withColumn('mono_id', f.monotonically_increasing_id())
+    .join(cohort, on='PERSON_ID', how='inner')
+    .withColumn('_age_at_record_date', f.datediff(f.col('DATE'), f.col('date_of_birth'))/365.25)
+    .where(
+        (f.col('DATE').isNotNull()) & 
+        (f.col('_age_at_record_date') >= 10) & 
+        (f.col('_age_at_record_date') < 100)
+    )
+    #***REMOVED***.where(f.col('DATE') >= markers_start_date)
+)
+
+gdppr_prepared_preg = (
+    gdppr
+    .select(f.col('NHS_NUMBER_DEID').alias('PERSON_ID'), 'DATE', 'CODE', 'VALUE1_CONDITION', 'VALUE2_CONDITION')
+    .where(f.col('PERSON_ID').isNotNull() & f.col('DATE').isNotNull())  
+    .withColumn('mono_id', f.monotonically_increasing_id())
+    .join(cohort, on='PERSON_ID', how='inner')
+    .withColumn('_age_at_record_date', f.datediff(f.col('DATE'), f.col('date_of_birth'))/365.25)
+    .where(
+        (f.col('DATE').isNotNull()) & 
+        (f.col('_age_at_record_date') >= 10) & 
+        (f.col('_age_at_record_date') < 100)
+    )
+    # .filter((~f.col("DATE").between(f.col("exclusion_start"), f.col("exclusion_end"))) | (f.col("exclusion_start").isNull()))
+    #***REMOVED***.where(f.col('DATE') >= markers_start_date)
+)
+
+cond = (
+    (gdppr_prepared_preg.PERSON_ID == mat2.PERSON_ID) &
+    (gdppr_prepared_preg.DATE >= mat2.exclusion_start) &
+    (gdppr_prepared_preg.DATE <= mat2.exclusion_end)
+)
+
+gdppr_prepared_preg = gdppr_prepared_preg.join(mat2, how='left_anti', on=cond)
+
+# COMMAND ----------
+
+# DBTITLE 1,Match codelist for BMI
+from mythoslib import _codelist_match_all, codelist_match_summary
+# dictionary - key: dataset, codelist, and ordering in the event of tied records
+dict_in = {
+    'gdppr': (gdppr_prepared, codelist_prepared, 1)
+}
+
+# Run codelist match and codelist match summary functions
+# We only import and run the first stage of codelist matching, giving us all the matches across the input datasets. We don't need the 1st match or the wide format.
+matched_all = _codelist_match_all(dict_in)
+#***REMOVED***matched_all_summ_name, matched_all_summ_name_code = codelist_match_summary(dict_in, matched_all)
+
+# temp save
+matched_all = temp_save(df=matched_all, out_name=f'{Project.name}_tmp_bmi_matched_all')
+#***REMOVED***matched_all_summ_name  = temp_save(df=matched_all_summ_name, out_name=f'{Project.name}_tmp_bmi_matched_all_summ_name')
+#***REMOVED***matched_all_summ_name_code = temp_save(df=matched_all_summ_name_code, out_name=f'{Project.name}_tmp_bmi_matched_all_summ_name_code')
+
+# COMMAND ----------
+
+from mythoslib import _codelist_match_all, codelist_match_summary
+# dictionary - key: dataset, codelist, and ordering in the event of tied records
+dict_in_preg = {
+    'gdppr': (gdppr_prepared_preg, codelist_prepared, 1)
+}
+
+# Run codelist match and codelist match summary functions
+# We only import and run the first stage of codelist matching, giving us all the matches across the input datasets. We don't need the 1st match or the wide format.
+matched_all_preg = _codelist_match_all(dict_in_preg)
+#***REMOVED***matched_all_summ_name, matched_all_summ_name_code = codelist_match_summary(dict_in, matched_all)
+
+# temp save
+matched_all_preg = temp_save(df=matched_all_preg, out_name=f'{Project.name}_tmp_bmi_matched_all_preg')
+#***REMOVED***matched_all_summ_name  = temp_save(df=matched_all_summ_name, out_name=f'{Project.name}_tmp_bmi_matched_all_summ_name')
+#***REMOVED***matched_all_summ_name_code = temp_save(df=matched_all_summ_name_code, out_name=f'{Project.name}_tmp_bmi_matched_all_summ_name_code')
+
+# COMMAND ----------
+
+# DBTITLE 1,Load (if re-running)
+# Load
+matched_all      = spark.table(f'{Project.dsa}.{Project.name}_tmp_bmi_matched_all')
+matched_all_preg = spark.table(f'{Project.dsa}.{Project.name}_tmp_bmi_matched_all_preg')
+#***REMOVED***matched_all_summ_name = spark.table(f'{Project.dsa}.{Project.name}_tmp_covariates_markers_matched_all_summ_name')
+#***REMOVED***matched_all_summ_name_code = spark.table(f'{Project.dsa}.{Project.name}_tmp_covariates_markers_matched_all_summ_name_code')
+
+# COMMAND ----------
+
+# DBTITLE 1,Filter nulls/OOR
+# filter out nulls or out of range (OOR) values to avoid selecting these in the next stage
+def constrain_marker_to_range(df, marker_name, range_low, range_high):
+    """ Given the table of matched biomarker records, the name of a biomarker, and low & high ends for the valid range of values,
+    Filters out any records for that biomarker that lie outside the given range (inclusive). Ignores other biomarkers in the table.
+    Also removes NULLs.
+    """
+    col_name, col_value = f.col('name'), f.col('VALUE1_CONDITION')
+    # Logical mask for the biomarker: A given record can either belong to the biomarker and be in the given range
+    # OR not belong to this biomarker (in which case we ignore it)
+    marker_within_range = (col_name == marker_name) & (col_value >= range_low) & (col_value <= range_high)
+    different_marker = (col_name != marker_name)
+    marker_not_null = (col_value.isNotNull())
+
+    return df.where((marker_not_null & marker_within_range) | different_marker)
+
+def constrain_all_markers_to_ranges(df, ranges):
+    """ Given the table of matched biomarker records, and a dictionary of biomarker names and low & high ends for the valid ranges of values,
+    Filters out any records for those biomarkers that lie outside the given ranges (inclusive). Ignores other biomarkers in the table.
+    Expects ranges: Dict[string, Tuple[Numeric, Numeric]] with the name of the biomarker as the key (e.g. 'bmi') and the lower and upper ends of the range (inclusive) as the value.
+    """
+    # Iterate the different biomarker types
+    result = df
+    for marker_name, (range_low, range_high) in ranges.items():
+        result = constrain_marker_to_range(result, marker_name, range_low, range_high)
+    
+    return result
+
+marker_ranges = {
+    'bmi': (10, 250)
+}
+
+matched_2_constrained      = constrain_all_markers_to_ranges(matched_all, marker_ranges)
+matched_2_constrained_preg = constrain_all_markers_to_ranges(matched_all_preg, marker_ranges)
+
+# COMMAND ----------
+
+# DBTITLE 1,Round values
+matched_3_rounded = (
+    matched_2_constrained
+    .withColumn('VALUE1_CONDITION', f.round(f.col('VALUE1_CONDITION'), 2))
+    .withColumn('VALUE2_CONDITION', f.round(f.col('VALUE2_CONDITION'), 2))
+)
+
+matched_3_rounded_preg = (
+    matched_2_constrained_preg
+    .withColumn('VALUE1_CONDITION', f.round(f.col('VALUE1_CONDITION'), 2))
+    .withColumn('VALUE2_CONDITION', f.round(f.col('VALUE2_CONDITION'), 2))
+)
+
+# COMMAND ----------
+
+# DBTITLE 1,Filter duplicates
+window_duplicates = (
+    Window
+    .partitionBy('PERSON_ID', 'name', 'DATE', 'VALUE1_CONDITION')
+    .orderBy('mono_id')
+)
+matched_4_deduplicated = (
+    matched_3_rounded
+    .withColumn('_rank', f.row_number().over(window_duplicates))
+    .where(f.col('_rank') == 1)
+    .drop('_rank')
+)
+matched_4_deduplicated_preg = (
+    matched_3_rounded_preg
+    .withColumn('_rank', f.row_number().over(window_duplicates))
+    .where(f.col('_rank') == 1)
+    .drop('_rank')
+)
+
+# COMMAND ----------
+
+display(matched_4_deduplicated.join(skinny.select(f.col("person_id").alias('PERSON_ID'), "sex"), on='PERSON_ID', how='left'))
+
+# COMMAND ----------
+
+matched_5_deduplicated = matched_4_deduplicated.select('CODE', 'source', 'PERSON_ID', 'VALUE1_CONDITION', 'mono_id', 'DATE', 'date_of_birth', '_age_at_record_date').join(skinny.select(f.col("person_id").alias('PERSON_ID'), "sex"), on='PERSON_ID', how='left')
+
+matched_5_deduplicated_preg = matched_4_deduplicated_preg.select('CODE', 'source', 'PERSON_ID', 'VALUE1_CONDITION', 'mono_id', 'DATE', 'date_of_birth', '_age_at_record_date').join(skinny.select(f.col("person_id").alias('PERSON_ID'), "sex"), on='PERSON_ID', how='left')
+
+# COMMAND ----------
+
+# Again for Venn diagram
+save_table(df=matched_5_deduplicated, out_name=f'{Project.name}_tmp_gdppr_bmi_all_venn_diagram', save_previous=True)
+
+# COMMAND ----------
+
+# DBTITLE 1,Get first recordings of BMI >=30
+# Define windows to deduplicate
+# Function to define deduplication windows
+def define_window(partition_column, order_column):
+    return Window.partitionBy(partition_column).orderBy(order_column)
+
+# Define windows
+window_duplicates_bmi30 = define_window('PERSON_ID', 'cov_hx_bmi30_date')
+window_duplicates_bmi275 = define_window('PERSON_ID', 'cov_hx_bmi275_date')
+
+import operator
+from pyspark.sql import functions as f
+
+def process_bmi_threshold(
+    df, 
+    threshold, 
+    age_threshold, 
+    age_comparator,   # e.g., operator.ge or operator.le
+    date_col_alias, 
+    flag_col_name, 
+    window_spec,
+    sex_filter=None   # Optional: "M", "F", or None
+):
+    condition = (
+        (f.col('VALUE1_CONDITION') >= threshold) &
+        age_comparator(f.col('_age_at_record_date'), age_threshold)
+    )
+    
+    if sex_filter is not None:
+        condition = condition & (f.col('sex') == sex_filter)
+
+    return (
+        df
+        .where(condition)
+        .select(
+            "PERSON_ID",
+            "_age_at_record_date",
+            "sex",
+            f.col('DATE').alias(date_col_alias)
+        )
+        .withColumn(flag_col_name, f.lit(1))
+        .withColumn('_rank', f.row_number().over(window_spec))
+        .where(f.col('_rank') == 1)
+        .drop('_rank')
+    )
+
+# Process BMI >= 30
+bmi30 = process_bmi_threshold(
+    df=matched_5_deduplicated, 
+    threshold=30, 
+    age_threshold=18,
+    age_comparator=operator.ge,
+    date_col_alias='cov_hx_bmi30_date', 
+    flag_col_name='cov_hx_bmi30_flag', 
+    window_spec=window_duplicates_bmi30
+)
+
+# Process BMI >= 27.5
+bmi275 = process_bmi_threshold(
+    matched_5_deduplicated, 
+    threshold=27.5, 
+    age_threshold=18,
+    age_comparator=operator.ge,
+    date_col_alias='cov_hx_bmi275_date', 
+    flag_col_name='cov_hx_bmi275_flag', 
+    window_spec=window_duplicates_bmi275
+)
+
+# Pregnancy
+
+# Process BMI >= 30
+bmi30_preg = process_bmi_threshold(
+    df=matched_5_deduplicated_preg, 
+    threshold=30, 
+    age_threshold=18,
+    age_comparator=operator.ge,
+    date_col_alias='cov_hx_bmi30_date', 
+    flag_col_name='cov_hx_bmi30_flag', 
+    window_spec=window_duplicates_bmi30
+)
+
+# Process BMI >= 27.5
+bmi275_preg = process_bmi_threshold(
+    matched_5_deduplicated_preg, 
+    threshold=27.5, 
+    age_threshold=18,
+    age_comparator=operator.ge,
+    date_col_alias='cov_hx_bmi275_date', 
+    flag_col_name='cov_hx_bmi275_flag', 
+    window_spec=window_duplicates_bmi275
+)
+
+# COMMAND ----------
+
+# DBTITLE 1,Thresholds for boys
+window_duplicates_bmi2396 = define_window('PERSON_ID', 'cov_hx_bmi2396_date') # 10
+window_duplicates_bmi2454 = define_window('PERSON_ID', 'cov_hx_bmi2454_date') #***REMOVED***10.5
+window_duplicates_bmi2507 = define_window('PERSON_ID', 'cov_hx_bmi2507_date') # 11
+window_duplicates_bmi2556 = define_window('PERSON_ID', 'cov_hx_bmi2556_date') #***REMOVED***11.5
+window_duplicates_bmi2602 = define_window('PERSON_ID', 'cov_hx_bmi2602_date') # 12
+window_duplicates_bmi2645 = define_window('PERSON_ID', 'cov_hx_bmi2645_date') #***REMOVED***12.5
+window_duplicates_bmi2687 = define_window('PERSON_ID', 'cov_hx_bmi2687_date') # 13
+window_duplicates_bmi2726 = define_window('PERSON_ID', 'cov_hx_bmi2726_date') # 13.5
+
+window_duplicates_bmi2764 = define_window('PERSON_ID', 'cov_hx_bmi2764_date') #***REMOVED***14
+window_duplicates_bmi2800 = define_window('PERSON_ID', 'cov_hx_bmi2800_date') #***REMOVED***14.5
+window_duplicates_bmi2832 = define_window('PERSON_ID', 'cov_hx_bmi2832_date') # 15
+window_duplicates_bmi2861 = define_window('PERSON_ID', 'cov_hx_bmi2861_date') #***REMOVED***15.5
+window_duplicates_bmi2888 = define_window('PERSON_ID', 'cov_hx_bmi2888_date') #***REMOVED***16
+window_duplicates_bmi2915 = define_window('PERSON_ID', 'cov_hx_bmi2915_date') #***REMOVED***16.5
+window_duplicates_bmi2943 = define_window('PERSON_ID', 'cov_hx_bmi2943_date') # 17
+window_duplicates_bmi2971 = define_window('PERSON_ID', 'cov_hx_bmi2971_date') #***REMOVED***17.5
+
+# Process BMI >= 23.96
+bmi2396 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=23.96, age_threshold=10.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2396_date', flag_col_name='cov_hx_bmi2396_flag', 
+    window_spec=window_duplicates_bmi2396, sex_filter='M'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 24.54
+bmi2454 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=24.54, age_threshold=11, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2454_date', flag_col_name='cov_hx_bmi2454_flag', 
+    window_spec=window_duplicates_bmi2454, sex_filter='M'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 25.07
+bmi2507 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=25.07, age_threshold=11.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2507_date', flag_col_name='cov_hx_bmi2507_flag', 
+    window_spec=window_duplicates_bmi2507, sex_filter='M'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 25.56
+bmi2556 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=25.56, age_threshold=12, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2556_date', flag_col_name='cov_hx_bmi2556_flag', 
+    window_spec=window_duplicates_bmi2556, sex_filter='M'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 26.02
+bmi2602 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=26.02, age_threshold=12.5, age_comparator=operator.lt, date_col_alias='cov_hx_bmi2602_date', flag_col_name='cov_hx_bmi2602_flag', 
+    window_spec=window_duplicates_bmi2602, sex_filter='M'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 26.45
+bmi2645 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=26.45, age_threshold=13, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2645_date', flag_col_name='cov_hx_bmi2645_flag', 
+    window_spec=window_duplicates_bmi2645, sex_filter='M'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 26.87
+bmi2687 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=26.87, age_threshold=13.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2687_date', flag_col_name='cov_hx_bmi2687_flag', 
+    window_spec=window_duplicates_bmi2687,sex_filter='M'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 27.26
+bmi2726 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=27.26, age_threshold=14, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2726_date', flag_col_name='cov_hx_bmi2726_flag', 
+    window_spec=window_duplicates_bmi2726, sex_filter='M'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 27.64
+bmi2764 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=27.64, age_threshold=14.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2764_date', flag_col_name='cov_hx_bmi2764_flag', 
+    window_spec=window_duplicates_bmi2764, sex_filter='M'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 28.00
+bmi2800 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=28.00, age_threshold=15, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2800_date', flag_col_name='cov_hx_bmi2800_flag', 
+    window_spec=window_duplicates_bmi2800, sex_filter='M'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 28.32
+bmi2832 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=28.32, age_threshold=15.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2832_date', flag_col_name='cov_hx_bmi2832_flag', 
+    window_spec=window_duplicates_bmi2832, sex_filter='M'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 28.61
+bmi2861 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=28.61, age_threshold=16, age_comparator=operator.lt,date_col_alias='cov_hx_bmi2861_date', flag_col_name='cov_hx_bmi2861_flag', 
+    window_spec=window_duplicates_bmi2861, sex_filter='M'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 28.88
+bmi2888 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=28.88, age_threshold=16.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2888_date', flag_col_name='cov_hx_bmi2888_flag', 
+    window_spec=window_duplicates_bmi2888, sex_filter='M'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 29.15
+bmi2915 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=29.15, age_threshold=17,age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2915_date', flag_col_name='cov_hx_bmi2915_flag', 
+    window_spec=window_duplicates_bmi2915, sex_filter='M'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 29.43
+bmi2943 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=29.43, age_threshold=17.5, age_comparator=operator.lt, date_col_alias='cov_hx_bmi2943_date', flag_col_name='cov_hx_bmi2943_flag', 
+    window_spec=window_duplicates_bmi2943, sex_filter='M'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 29.71
+bmi2971 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=29.71, age_threshold=18, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2971_date', flag_col_name='cov_hx_bmi2971_flag', 
+    window_spec=window_duplicates_bmi2971, sex_filter='M'
+).drop('_age_at_record_date', 'sex')
+
+# COMMAND ----------
+
+# DBTITLE 1,Define first obesity for boys
+history_wide_adolescents_m = (
+    cohort
+    .select('PERSON_ID')
+    .join(bmi2396, on='PERSON_ID', how='full_outer')
+    .join(bmi2454, on='PERSON_ID', how='full_outer')
+    .join(bmi2507, on='PERSON_ID', how='full_outer')
+    .join(bmi2556, on='PERSON_ID', how='full_outer')
+    .join(bmi2602, on='PERSON_ID', how='full_outer')
+    .join(bmi2645, on='PERSON_ID', how='full_outer')
+    .join(bmi2687, on='PERSON_ID', how='full_outer')
+    .join(bmi2726, on='PERSON_ID', how='full_outer')
+    .join(bmi2764, on='PERSON_ID', how='full_outer')
+    .join(bmi2800, on='PERSON_ID', how='full_outer')
+    .join(bmi2832, on='PERSON_ID', how='full_outer')
+    .join(bmi2861, on='PERSON_ID', how='full_outer')
+    .join(bmi2888, on='PERSON_ID', how='full_outer')
+    .join(bmi2915, on='PERSON_ID', how='full_outer')
+    .join(bmi2943, on='PERSON_ID', how='full_outer')
+    .join(bmi2971, on='PERSON_ID', how='full_outer')
+)
+
+# List of all date columns starting with 'cov_hx_' and ending with '_date'
+date_columns = [_ for _ in history_wide_adolescents_m.columns if _.startswith('cov_hx_') and _.endswith('_date')]
+
+history_wide_adolescents_m2 = (
+    history_wide_adolescents_m
+    # Conditional logic
+    .withColumn(
+        'cov_hx_first_obesity_adol_m_date',
+         f.least(*[f.col(col) for col in date_columns])
+    )
+    .where(f.col('cov_hx_first_obesity_adol_m_date').isNotNull())
+)
+
+history_wide_adolescents_m2 = temp_save(df=history_wide_adolescents_m2, out_name=f'{Project.name}_tmp_hx_adolescents_m2')
+
+# COMMAND ----------
+
+history_wide_adolescents_m2 = spark.table(f'{Project.dsa}.{Project.name}_tmp_hx_adolescents_m2')
+display(history_wide_adolescents_m2.where(f.col('cov_hx_first_obesity_adol_m_date').isNotNull()))
+
+# COMMAND ----------
+
+# DBTITLE 1,Thresholds for girls
+# Define windows for childhood obesity (girls)
+window_duplicates_bmi2397 = define_window('PERSON_ID', 'cov_hx_bmi2397_date') # 10
+window_duplicates_bmi2462 = define_window('PERSON_ID', 'cov_hx_bmi2462_date') #***REMOVED***10.5
+window_duplicates_bmi2525 = define_window('PERSON_ID', 'cov_hx_bmi2525_date') # 11
+window_duplicates_bmi2587 = define_window('PERSON_ID', 'cov_hx_bmi2587_date') #***REMOVED***11.5
+window_duplicates_bmi2647 = define_window('PERSON_ID', 'cov_hx_bmi2647_date') # 12
+window_duplicates_bmi2704 = define_window('PERSON_ID', 'cov_hx_bmi2704_date') #***REMOVED***12.5
+window_duplicates_bmi2757 = define_window('PERSON_ID', 'cov_hx_bmi2757_date') # 13
+window_duplicates_bmi2803 = define_window('PERSON_ID', 'cov_hx_bmi2803_date') # 13.5
+
+window_duplicates_bmi2842 = define_window('PERSON_ID', 'cov_hx_bmi2842_date') #***REMOVED***14
+window_duplicates_bmi2874 = define_window('PERSON_ID', 'cov_hx_bmi2874_date') #***REMOVED***14.5
+window_duplicates_bmi2901 = define_window('PERSON_ID', 'cov_hx_bmi2901_date') # 15
+window_duplicates_bmi2922 = define_window('PERSON_ID', 'cov_hx_bmi2922_date') #***REMOVED***15.5
+window_duplicates_bmi2940 = define_window('PERSON_ID', 'cov_hx_bmi2940_date') #***REMOVED***16
+window_duplicates_bmi2955 = define_window('PERSON_ID', 'cov_hx_bmi2955_date') #***REMOVED***16.5
+window_duplicates_bmi2970 = define_window('PERSON_ID', 'cov_hx_bmi2970_date') # 17
+window_duplicates_bmi2985 = define_window('PERSON_ID', 'cov_hx_bmi2985_date') #***REMOVED***17.5
+
+# Process BMI >= 23.97
+bmi2397 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=23.97, age_threshold=10.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2397_date', flag_col_name='cov_hx_bmi2397_flag', 
+    window_spec=window_duplicates_bmi2397, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 24.62
+bmi2462 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=24.62, age_threshold=11, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2462_date', flag_col_name='cov_hx_bmi2462_flag', 
+    window_spec=window_duplicates_bmi2462, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 25.25
+bmi2525 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=25.25, age_threshold=11.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2525_date', flag_col_name='cov_hx_bmi2525_flag', 
+    window_spec=window_duplicates_bmi2525, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 25.87
+bmi2587 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=25.87, age_threshold=12, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2587_date', flag_col_name='cov_hx_bmi2587_flag', 
+    window_spec=window_duplicates_bmi2587, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 26.47
+bmi2647 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=26.47, age_threshold=12.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2647_date', flag_col_name='cov_hx_bmi2647_flag', 
+    window_spec=window_duplicates_bmi2647, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 27.04
+bmi2704 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=27.04, age_threshold=13, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2704_date', flag_col_name='cov_hx_bmi2704_flag', 
+    window_spec=window_duplicates_bmi2704, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 27.57
+bmi2757 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=27.57, age_threshold=13.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2757_date', flag_col_name='cov_hx_bmi2757_flag', 
+    window_spec=window_duplicates_bmi2757, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 28.03
+bmi2803 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=28.03, age_threshold=14, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2803_date', flag_col_name='cov_hx_bmi2803_flag', 
+    window_spec=window_duplicates_bmi2803, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 28.42
+bmi2842 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=28.42, age_threshold=14.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2842_date', flag_col_name='cov_hx_bmi2842_flag', 
+    window_spec=window_duplicates_bmi2842, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 28.74
+bmi2874 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=28.74, age_threshold=15, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2874_date', flag_col_name='cov_hx_bmi2874_flag', 
+    window_spec=window_duplicates_bmi2874, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 29.01
+bmi2901 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=29.01, age_threshold=15.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2901_date', flag_col_name='cov_hx_bmi2901_flag', 
+    window_spec=window_duplicates_bmi2901, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 29.22
+bmi2922 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=29.22, age_threshold=16, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2922_date', flag_col_name='cov_hx_bmi2922_flag', 
+    window_spec=window_duplicates_bmi2922, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 29.40
+bmi2940 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=29.40, age_threshold=16.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2940_date', flag_col_name='cov_hx_bmi2940_flag', 
+    window_spec=window_duplicates_bmi2940, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 29.55
+bmi2955 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=29.55, age_threshold=17, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2955_date', flag_col_name='cov_hx_bmi2955_flag', 
+    window_spec=window_duplicates_bmi2955, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 29.70
+bmi2970 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=29.70, age_threshold=17.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2970_date', flag_col_name='cov_hx_bmi2970_flag', 
+    window_spec=window_duplicates_bmi2970, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 29.85
+bmi2985 = process_bmi_threshold(
+    df=matched_5_deduplicated, threshold=29.85, age_threshold=18, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2985_date', flag_col_name='cov_hx_bmi2985_flag', 
+    window_spec=window_duplicates_bmi2985, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# COMMAND ----------
+
+# Process BMI >= 23.97
+bmi2397_preg = process_bmi_threshold(
+    df=matched_5_deduplicated_preg, threshold=23.97, age_threshold=10.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2397_date', flag_col_name='cov_hx_bmi2397_flag', 
+    window_spec=window_duplicates_bmi2397, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 24.62
+bmi2462_preg = process_bmi_threshold(
+    df=matched_5_deduplicated_preg, threshold=24.62, age_threshold=11, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2462_date', flag_col_name='cov_hx_bmi2462_flag', 
+    window_spec=window_duplicates_bmi2462, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 25.25
+bmi2525_preg = process_bmi_threshold(
+    df=matched_5_deduplicated_preg, threshold=25.25, age_threshold=11.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2525_date', flag_col_name='cov_hx_bmi2525_flag', 
+    window_spec=window_duplicates_bmi2525, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 25.87
+bmi2587_preg = process_bmi_threshold(
+    df=matched_5_deduplicated_preg, threshold=25.87, age_threshold=12, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2587_date', flag_col_name='cov_hx_bmi2587_flag', 
+    window_spec=window_duplicates_bmi2587, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 26.47
+bmi2647_preg = process_bmi_threshold(
+    df=matched_5_deduplicated_preg, threshold=26.47, age_threshold=12.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2647_date', flag_col_name='cov_hx_bmi2647_flag', 
+    window_spec=window_duplicates_bmi2647, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 27.04
+bmi2704_preg = process_bmi_threshold(
+    df=matched_5_deduplicated_preg, threshold=27.04, age_threshold=13, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2704_date', flag_col_name='cov_hx_bmi2704_flag', 
+    window_spec=window_duplicates_bmi2704, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 27.57
+bmi2757_preg = process_bmi_threshold(
+    df=matched_5_deduplicated_preg, threshold=27.57, age_threshold=13.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2757_date', flag_col_name='cov_hx_bmi2757_flag', 
+    window_spec=window_duplicates_bmi2757, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 28.03
+bmi2803_preg = process_bmi_threshold(
+    df=matched_5_deduplicated_preg, threshold=28.03, age_threshold=14, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2803_date', flag_col_name='cov_hx_bmi2803_flag', 
+    window_spec=window_duplicates_bmi2803, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 28.42
+bmi2842_preg = process_bmi_threshold(
+    df=matched_5_deduplicated_preg, threshold=28.42, age_threshold=14.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2842_date', flag_col_name='cov_hx_bmi2842_flag', 
+    window_spec=window_duplicates_bmi2842, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 28.74
+bmi2874_preg = process_bmi_threshold(
+    df=matched_5_deduplicated_preg, threshold=28.74, age_threshold=15, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2874_date', flag_col_name='cov_hx_bmi2874_flag', 
+    window_spec=window_duplicates_bmi2874, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 29.01
+bmi2901_preg = process_bmi_threshold(
+    df=matched_5_deduplicated_preg, threshold=29.01, age_threshold=15.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2901_date', flag_col_name='cov_hx_bmi2901_flag', 
+    window_spec=window_duplicates_bmi2901, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 29.22
+bmi2922_preg = process_bmi_threshold(
+    df=matched_5_deduplicated_preg, threshold=29.22, age_threshold=16, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2922_date', flag_col_name='cov_hx_bmi2922_flag', 
+    window_spec=window_duplicates_bmi2922, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 29.40
+bmi2940_preg = process_bmi_threshold(
+    df=matched_5_deduplicated_preg, threshold=29.40, age_threshold=16.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2940_date', flag_col_name='cov_hx_bmi2940_flag', 
+    window_spec=window_duplicates_bmi2940, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 29.55
+bmi2955_preg = process_bmi_threshold(
+    df=matched_5_deduplicated_preg, threshold=29.55, age_threshold=17, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2955_date', flag_col_name='cov_hx_bmi2955_flag', 
+    window_spec=window_duplicates_bmi2955, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 29.70
+bmi2970_preg = process_bmi_threshold(
+    df=matched_5_deduplicated_preg, threshold=29.70, age_threshold=17.5, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2970_date', flag_col_name='cov_hx_bmi2970_flag', 
+    window_spec=window_duplicates_bmi2970, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# Process BMI >= 29.85
+bmi2985_preg = process_bmi_threshold(
+    df=matched_5_deduplicated_preg, threshold=29.85, age_threshold=18, age_comparator=operator.lt,
+    date_col_alias='cov_hx_bmi2985_date', flag_col_name='cov_hx_bmi2985_flag', 
+    window_spec=window_duplicates_bmi2985, sex_filter='F'
+).drop('_age_at_record_date', 'sex')
+
+# COMMAND ----------
+
+history_wide_adolescents_f = (
+    cohort
+    .select('PERSON_ID')
+    .join(bmi2397, on='PERSON_ID', how='full_outer')
+    .join(bmi2462, on='PERSON_ID', how='full_outer')
+    .join(bmi2525, on='PERSON_ID', how='full_outer')
+    .join(bmi2587, on='PERSON_ID', how='full_outer')
+    .join(bmi2647, on='PERSON_ID', how='full_outer')
+    .join(bmi2704, on='PERSON_ID', how='full_outer')
+    .join(bmi2757, on='PERSON_ID', how='full_outer')
+    .join(bmi2803, on='PERSON_ID', how='full_outer')
+    .join(bmi2842, on='PERSON_ID', how='full_outer')
+    .join(bmi2874, on='PERSON_ID', how='full_outer')
+    .join(bmi2901, on='PERSON_ID', how='full_outer')
+    .join(bmi2922, on='PERSON_ID', how='full_outer')
+    .join(bmi2940, on='PERSON_ID', how='full_outer')
+    .join(bmi2955, on='PERSON_ID', how='full_outer')
+    .join(bmi2970, on='PERSON_ID', how='full_outer')
+    .join(bmi2985, on='PERSON_ID', how='full_outer')
+)
+
+history_wide_adolescents_f_preg = (
+    cohort
+    .select('PERSON_ID')
+    .join(bmi2397_preg, on='PERSON_ID', how='full_outer')
+    .join(bmi2462_preg, on='PERSON_ID', how='full_outer')
+    .join(bmi2525_preg, on='PERSON_ID', how='full_outer')
+    .join(bmi2587_preg, on='PERSON_ID', how='full_outer')
+    .join(bmi2647_preg, on='PERSON_ID', how='full_outer')
+    .join(bmi2704_preg, on='PERSON_ID', how='full_outer')
+    .join(bmi2757_preg, on='PERSON_ID', how='full_outer')
+    .join(bmi2803_preg, on='PERSON_ID', how='full_outer')
+    .join(bmi2842_preg, on='PERSON_ID', how='full_outer')
+    .join(bmi2874_preg, on='PERSON_ID', how='full_outer')
+    .join(bmi2901_preg, on='PERSON_ID', how='full_outer')
+    .join(bmi2922_preg, on='PERSON_ID', how='full_outer')
+    .join(bmi2940_preg, on='PERSON_ID', how='full_outer')
+    .join(bmi2955_preg, on='PERSON_ID', how='full_outer')
+    .join(bmi2970_preg, on='PERSON_ID', how='full_outer')
+    .join(bmi2985_preg, on='PERSON_ID', how='full_outer')
+)
+
+# List of all date columns starting with 'cov_hx_' and ending with '_date'
+date_columns = [_ for _ in history_wide_adolescents_f.columns if _.startswith('cov_hx_') and _.endswith('_date')]
+
+history_wide_adolescents_f2 = (
+    history_wide_adolescents_f
+    # Conditional logic
+    .withColumn(
+        'cov_hx_first_obesity_adol_f_date',
+         f.least(*[f.col(col) for col in date_columns])
+    )
+    .where(f.col('cov_hx_first_obesity_adol_f_date').isNotNull())
+)
+
+history_wide_adolescents_f2_preg = (
+    history_wide_adolescents_f_preg
+    # Conditional logic
+    .withColumn(
+        'cov_hx_first_obesity_adol_f_date',
+         f.least(*[f.col(col) for col in date_columns])
+    )
+    .where(f.col('cov_hx_first_obesity_adol_f_date').isNotNull())
+)
+
+history_wide_adolescents_f2 = temp_save(df=history_wide_adolescents_f2, out_name=f'{Project.name}_tmp_hx_adolescents_f2')
+history_wide_adolescents_f2_preg = temp_save(df=history_wide_adolescents_f2, out_name=f'{Project.name}_tmp_hx_adolescents_f2_preg')
+
+# COMMAND ----------
+
+history_wide_adolescents_f2 = spark.table(f'{Project.dsa}.{Project.name}_tmp_hx_adolescents_f2')
+# display(history_wide_adolescents_f2.where(f.col('cov_hx_first_obesity_adol_f_date').isNotNull()))
+
+history_wide_adolescents_f2_preg = spark.table(f'{Project.dsa}.{Project.name}_tmp_hx_adolescents_f2_preg')
+display(history_wide_adolescents_f2_preg.where(f.col('cov_hx_first_obesity_adol_f_date').isNotNull()))
+
+# COMMAND ----------
+
+# DBTITLE 1,Join dataframes for definitive obesity cohort
+history_wide1 = (
+    hx_match_1st_wide
+    .join(bmi30.drop('_age_at_record_date', 'sex'), on='PERSON_ID', how='full_outer')
+    .join(bmi275.drop('_age_at_record_date', 'sex'), on='PERSON_ID', how='full_outer')
+    .join(history_wide_adolescents_m2.select('PERSON_ID', 'cov_hx_first_obesity_adol_m_date'), on='PERSON_ID', how='full_outer')
+    .join(history_wide_adolescents_f2.select('PERSON_ID', 'cov_hx_first_obesity_adol_f_date'), on='PERSON_ID', how='full_outer')
+    .join(skinny.select(f.col("person_id").alias('PERSON_ID'), "sex"), on='PERSON_ID', how='left')
+)
+display(history_wide1)
+
+history_wide1_preg = (
+    hx_match_1st_wide_preg
+    .join(bmi30_preg.drop('_age_at_record_date', 'sex'), on='PERSON_ID', how='full_outer')
+    .join(bmi275_preg.drop('_age_at_record_date', 'sex'), on='PERSON_ID', how='full_outer')
+    .join(history_wide_adolescents_m2.select('PERSON_ID', 'cov_hx_first_obesity_adol_m_date'), on='PERSON_ID', how='full_outer')
+    .join(history_wide_adolescents_f2_preg.select('PERSON_ID', 'cov_hx_first_obesity_adol_f_date'), on='PERSON_ID', how='full_outer')
+    .join(skinny.select(f.col("person_id").alias('PERSON_ID'), "sex"), on='PERSON_ID', how='left')
+)
+
+# COMMAND ----------
+
+# MAGIC %md ## 4.3 Index Dates
+# MAGIC
+# MAGIC Under dynamic inclusion:
+# MAGIC We define the index/inclusion date for each person like depending on if their earliest obesity history event is before the study start date or after:
+# MAGIC  - Before: Index date is the study start date
+# MAGIC  - After: Index date is the date of the earliest obesity event
+# MAGIC
+# MAGIC Under static inclusion, we simply check when the first obesity history event was but don't use it for inclusion purposes.
+
+# COMMAND ----------
+
+# DBTITLE 1,Main analysis
+# List of all date columns starting with 'cov_hx_' and ending with '_date'
+date_columns = [_ for _ in history_wide1.columns if _.startswith('cov_hx_') and _.endswith('_date')]
+
+# Exclude 'cov_hx_bmi275_date' for individuals of certain ethnicities (see below)
+date_columns_excluding_bmi275 = [col for col in date_columns if col != 'cov_hx_bmi275_date']
+
+history_wide2 = (
+    history_wide1
+    .join(skinny.select(f.col('person_id').alias('PERSON_ID'), 'ethnicity_5_group', 'ethnicity_18_group'), on='PERSON_ID', how='left')
+    # Conditional logic for defining 'cov_hx_first_obesity_date'
+    .withColumn(
+        'cov_hx_first_obesity_date',
+        f.when(
+            f.col('ethnicity_5_group').rlike('Asian|Black'),
+            f.least(*[f.col(col) for col in date_columns])  # Use all date columns for Asian and Black individuals
+        ).when(
+            f.col('ethnicity_18_group').rlike('Arab'),
+            f.least(*[f.col(col) for col in date_columns]) # Include Middle Eastern individuals (Arabs)
+        ).otherwise(
+            f.least(*[f.col(col) for col in date_columns_excluding_bmi275])  # Exclude 'cov_hx_bmi275_date' for others
+        )
+    )
+    # Conditional logic for defining 'cov_hx_first_obesity_30kgm2_date'
+    .withColumn(
+        'cov_hx_first_obesity_30kgm2_date',
+         f.least(*[f.col(col) for col in date_columns_excluding_bmi275])
+    )
+    .drop('ethnicity_5_group', 'ethnicity_18_group')
+)
+
+# COMMAND ----------
+
+# List of all date columns starting with 'cov_hx_' and ending with '_date'
+date_columns = [_ for _ in history_wide1_preg.columns if _.startswith('cov_hx_') and _.endswith('_date')]
+
+# Exclude 'cov_hx_bmi275_date' for individuals of certain ethnicities (see below)
+date_columns_excluding_bmi275 = [col for col in date_columns if col != 'cov_hx_bmi275_date']
+
+history_wide2_preg = (
+    history_wide1_preg
+    .join(skinny.select(f.col('person_id').alias('PERSON_ID'), 'ethnicity_5_group', 'ethnicity_18_group'), on='PERSON_ID', how='left')
+    # Conditional logic for defining 'cov_hx_first_obesity_date'
+    .withColumn(
+        'cov_hx_first_obesity_date',
+        f.when(
+            f.col('ethnicity_5_group').rlike('Asian|Black'),
+            f.least(*[f.col(col) for col in date_columns])  # Use all date columns for Asian and Black individuals
+        ).when(
+            f.col('ethnicity_18_group').rlike('Arab'),
+            f.least(*[f.col(col) for col in date_columns]) # Include Middle Eastern individuals (Arabs)
+        ).otherwise(
+            f.least(*[f.col(col) for col in date_columns_excluding_bmi275])  # Exclude 'cov_hx_bmi275_date' for others
+        )
+    )
+    # Conditional logic for defining 'cov_hx_first_obesity_30kgm2_date'
+    .withColumn(
+        'cov_hx_first_obesity_30kgm2_date',
+         f.least(*[f.col(col) for col in date_columns_excluding_bmi275])
+    )
+    .drop('ethnicity_5_group', 'ethnicity_18_group')
+)
+
+# COMMAND ----------
+
+history_wide2_sensitivity = (
+    history_wide1
+    .join(skinny.select(f.col('person_id').alias('PERSON_ID'), 'ethnicity_5_group', 'ethnicity_18_group'), on='PERSON_ID', how='left')
+    # Conditional logic for 'cov_hx_first_obesity_date'
+    .withColumn(
+        'cov_hx_first_obesity_date',
+        f.when(
+            f.col('ethnicity_5_group').rlike('Asian|Black'),
+            f.least(*[f.col(col) for col in date_columns])  # Use all date columns for Asian and Black individuals
+        ).when(
+            f.col('ethnicity_18_group').rlike('Arab|White and'),
+            f.least(*[f.col(col) for col in date_columns]) # Include Middle Eastern individuals (Arabs) and certain mixed ethnicities
+        ).otherwise(
+            f.least(*[f.col(col) for col in date_columns_excluding_bmi275])  # Exclude 'cov_hx_bmi275_date' for others
+        )
+    )
+    # Conditional logic for defining 'cov_hx_first_obesity_30kgm2_date'
+    .withColumn(
+        'cov_hx_first_obesity_30kgm2_date',
+         f.least(*[f.col(col) for col in date_columns_excluding_bmi275])
+    )
+    .drop('ethnicity_5_group', 'ethnicity_18_group')
+)
+
+# COMMAND ----------
+
+display(history_wide2)
+
+# COMMAND ----------
+
+# MAGIC %md # 5. Save
+
+# COMMAND ----------
+
+save_table(df=history_wide2, out_name=f'{Project.name}_tmp_obesity_history_wide', save_previous=True)
+save_table(df=history_wide2_sensitivity, out_name=f'{Project.name}_tmp_obesity_history_wide_sensitivity', save_previous=True)
+save_table(df=history_wide2_preg, out_name=f'{Project.name}_tmp_obesity_history_wide_pregnancy', save_previous=True)
+
+# COMMAND ----------
+
+# DBTITLE 1,Reload to do a few checks
+obesity_all = spark.table(f'{Project.dsa}.{Project.name}_tmp_obesity_history_wide')
+obesity_all_preg = spark.table(f'{Project.dsa}.{Project.name}_tmp_obesity_history_wide_pregnancy')
+
+# COMMAND ----------
+
+display(obesity_all.orderBy(f.col('cov_hx_first_obesity_date').desc()))
+
+# COMMAND ----------
+
+display(obesity_all)
+
+# COMMAND ----------
+
+cohort.count()
+
+# COMMAND ----------
+
+# DBTITLE 1,Check number of individuals
+obesity_all.count()
+
+# COMMAND ----------
+
+# DBTITLE 1,Check number of individuals with obesity after baseline
+obesity_all.where(f.col('cov_hx_first_obesity_date') >= '2019-11-01').count()
+
+# COMMAND ----------
+
+obesity_all.where(f.col('cov_hx_first_obesity_date') < '2019-11-01').count()
+
+# COMMAND ----------
+
+obesity_all.where(f.col('cov_hx_first_obesity_30kgm2_date') >= '2019-11-01').count()
+
+# COMMAND ----------
+
+obesity_all_preg.where(f.col('cov_hx_first_obesity_30kgm2_date') >= '2019-11-01').count()

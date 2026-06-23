@@ -1,0 +1,470 @@
+# Databricks notebook source
+# MAGIC %md # CCU096_01-D01-parameters
+# MAGIC
+# MAGIC **Description** This notebook defines a set of parameters, which is loaded in each notebook in the data curation pipeline, so that datasets and parameters are consistently available.
+# MAGIC
+# MAGIC **Authors** Stelios Boulitsakis Logothetis and Robert Fletcher
+# MAGIC
+# MAGIC 
+# MAGIC
+# MAGIC **Notes** This pipeline has an initial production date of 2025-07-29 (`Project.pipeline_production_date` == `2025-07-29`). The `archived_on` dates used for each dataset correspond to the latest (most recent) batch of data before this date. 
+# MAGIC  - Should the pipeline and all the notebooks that follow need to be updated and rerun, then this notebook should be rerun directly (before being called by subsequent notebooks) with `Project.pipeline_production_date` updated and `PARAMETERS_RE_DERIVE_TOGGLE` switched to True. 
+# MAGIC  - Remember to reset `PARAMETERS_RE_DERIVE_TOGGLE` to False afterwards. 
+# MAGIC
+# MAGIC **Data Output** 
+# MAGIC - **`parameters_df_datasets`**: Table of dataset metadata, including row counts and `archived_on` dates, that can be used consistently throughout the pipeline .
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC # 0. Setup
+
+# COMMAND ----------
+
+# DBTITLE 1,PARAMETERS_RE_DERIVE_TOGGLE parameter evaluation
+from mythoslib import external_flag_parameter
+
+# Attempt to get PARAMETERS_RE_DERIVE_TOGGLE from Databricks job parameters 
+# If not set in Databricks, default to the second argument value (False).
+PARAMETERS_RE_DERIVE_TOGGLE = external_flag_parameter('PARAMETERS_RE_DERIVE_TOGGLE', False)
+
+# Can change it manually here too. 
+# PARAMETERS_RE_DERIVE_TOGGLE = True
+
+# COMMAND ----------
+
+# DBTITLE 1,External Parameters
+from mythoslib import external_parameter
+BASELINE_DATE = external_parameter("BASELINE_DATE", '2019-11-01')
+END_DATE = external_parameter("END_DATE", '2025-04-30')
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC # 1. Libraries
+
+# COMMAND ----------
+
+# DBTITLE 1,Imports
+import os, sys
+import pyspark.sql.functions as f
+import pandas as pd
+from tqdm import tqdm
+import datetime # Don't remove this. Breaks save_table
+
+# COMMAND ----------
+
+# DBTITLE 1,pyspark configuration
+# Suppress pyspark complaints when calling DataFrame.saveAsTable() with overwrite mode
+spark.conf.set('spark.sql.legacy.allowCreatingManagedTableUsingNonemptyLocation', 'true')
+
+# Prevent pyspark from complaining when parsing certain datetime strings
+os.environ['PYSPARK_PYTHON'] = sys.executable
+os.environ['PYSPARK_DRIVER_PYTHON'] = sys.executable
+spark.conf.set("spark.sql.execution.arrow.pyspark.enabled", "false")
+spark.conf.set("spark.sql.legacy.timeParserPolicy", "LEGACY")
+
+# Clear cache
+_ = spark.sql('CLEAR CACHE')
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC # 2. Common Functions
+
+# COMMAND ----------
+
+# DBTITLE 1,Import shds common functions
+# MAGIC %run "/Workspace/Shared/SHDS/common/functions"
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC # 3. Custom Functions
+
+# COMMAND ----------
+
+# DBTITLE 1,Utility function overrides
+# The pipeline makes a lot of calls to utility functions such as tab, tabastat, count_var, etc. 
+# These are nice for development but take very long to run, wasting time when we want the pipeline to execute end-to-end (e.g. a single count_var can take 4 hours!! on GDPPR)
+# So we override them to not do anything if debug_mode is set to False 
+
+from pyspark.sql import DataFrame
+from typing import Any, Callable, List, Mapping, Optional, Tuple
+
+_merge, _tab, _tabstat, _count_var, _count_varlist = merge, tab, tabstat, count_var, count_varlist
+
+def merge(df1: DataFrame, df2: DataFrame, ilist, quietly=0, broadcast_right=0, validate=None, assert_results=None, keep_results=None, indicator=1) -> DataFrame:
+    quietly = int(not Project.debug)
+    return _merge(df1, df2, ilist, quietly, broadcast_right, validate, assert_results, keep_results, indicator)
+
+def tab(df, var1, var2=None, var2_wide=1, var2_unstyled=1, cumsum=0):
+    if Project.debug:
+        return _tab(df, var1, var2, var2_wide, var2_unstyled, cumsum)
+
+def tabstat(df, var, byvar=None, date=0):
+    if Project.debug:
+        return _tabstat(df, var, byvar, date)
+
+def count_var(df, var1: str, ret=0, df_desc='', indx=0) -> None:
+    if Project.debug:
+        return _count_var(df, var1, ret, df_desc, indx)
+
+def count_varlist(df, varlist):
+    if Project.debug:
+        return _count_varlist(df, varlist)
+
+# COMMAND ----------
+
+def temp_save(df, out_name:str, _dbc:str=f''):
+  
+  spark.conf.set('spark.sql.legacy.allowCreatingManagedTableUsingNonemptyLocation', 'true')
+  
+  dfname = [x for x in globals() if globals()[x] is df]
+  if(len(dfname) == 1): dfname = dfname[0]
+  else: dfname = "unknown dfname (not in globals())"      
+  
+  print(f'saving {dfname} to {_dbc}.{out_name}')
+  if(out_name != out_name.lower()):
+    out_name_old = out_name
+    out_name == out_name.lower()
+    print(f'  out_name changed to lower case (from {out_name_old} to {out_name})')
+    
+  # save  
+  df.write.mode('overwrite').option('overwriteSchema','True').saveAsTable(f'{_dbc}.{out_name}')
+  #spark.sql(f'ALTER TABLE {_dbc}.{out_name} OWNER TO {_dbc}')
+  print(f'  saved')
+  
+  # repoint
+  spark.sql(f'REFRESH TABLE {_dbc}.{out_name}')
+  return spark.table(f'{_dbc}.{out_name}')
+
+
+def save_table(df, out_name:str, save_previous=True, data_base:str=f''):
+  
+  # assert that df is a dataframe
+  assert isinstance(df, f.DataFrame), 'df must be of type dataframe' #isinstance(df, pd.DataFrame) | 
+  # if a pandas df then convert to spark
+  #if(isinstance(df, pd.DataFrame)):
+    #df = (spark.createDataFrame(df))
+  
+  # save name check
+  if(any(char.isupper() for char in out_name)): 
+    print(f'Warning: {out_name} converted to lowercase for saving')
+    out_name = out_name.lower()
+    print('out_name: ' + out_name)
+    print('')
+  
+  # df name
+  df_name = [x for x in globals() if globals()[x] is df][0]
+  
+  # ------------------------------------------------------------------------------------------------
+  # save previous version for comparison purposes
+  if(save_previous):
+    tmpt = (
+      spark.sql(f"""SHOW TABLES FROM {data_base}""")
+      .select('tableName')
+      .where(f.col('tableName') == out_name)
+      .collect()
+    )
+    if(len(tmpt)>0):
+      # save with production date appended
+      _datetimenow = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+      out_name_pre = f'{out_name}_pre{_datetimenow}'.lower()
+      print(f'saving (previous version):')
+      print(f'  {out_name}')
+      print(f'  as')
+      print(f'  {out_name_pre}')
+      spark.table(f'{data_base}.{out_name}').write.mode('overwrite').option('overwriteSchema','True').saveAsTable(f'{data_base}.{out_name_pre}')
+      #spark.sql(f'ALTER TABLE {data_base}.{out_name_pre} OWNER TO {data_base}')
+      print('saved')
+      print('') 
+    else:
+      print(f'Warning: no previous version of {out_name} found')
+      print('')
+  # ------------------------------------------------------------------------------------------------  
+  
+  # save new version
+  print(f'saving:')
+  print(f'  {df_name}')
+  print(f'  as')
+  print(f'  {out_name}')
+  df.write.mode('overwrite').option("overwriteSchema", "True").saveAsTable(f'{data_base}.{out_name}')
+  #spark.sql(f'ALTER TABLE {data_base}.{out_name} OWNER TO {data_base}')
+  print('saved')
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC # 4. Paths and Variables
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 4.1 Set Project Specific Variables
+
+# COMMAND ----------
+
+# DBTITLE 1,Setting project-wide constants
+class Project:
+    # -----------------------------------------------------------------------------
+    # Databases
+    # -----------------------------------------------------------------------------
+    db = ''
+    dbc = f'{db}_collab'
+    dsa = ''
+
+    # -----------------------------------------------------------------------------
+    # Admin
+    # -----------------------------------------------------------------------------
+    name = f"ccu096_01_{BASELINE_DATE.replace('-','')}"
+    debug = False
+
+    # -----------------------------------------------------------------------------
+    # Dates
+    # -----------------------------------------------------------------------------
+    study_start_date = BASELINE_DATE
+    study_end_date   = END_DATE
+
+    # -----------------------------------------------------------------------------
+    # Pipeline production date
+    # -----------------------------------------------------------------------------
+    pipeline_production_date = '2025-07-29' # date at which pipeline was created and archived_on dates for datasets have been selected based on
+
+    # -----------------------------------------------------------------------------
+    # Datasets
+    # -----------------------------------------------------------------------------
+    datasets = pd.DataFrame([
+        # -----------------------------------------------------------------------------
+        # Datasets requested by the project
+        # -----------------------------------------------------------------------------  
+        ['gdppr',         dbc, f'gdppr_{db}_archive',             'NHS_NUMBER_DEID',                'DATE'],
+        ['hes_apc',       dbc, f'hes_apc_all_years_archive',      'PERSON_ID_DEID',                 'EPISTART'],
+        ['deaths',        dbc, f'deaths_{db}_archive',            'DEC_CONF_NHS_NUMBER_CLEAN_DEID', 'REG_DATE_OF_DEATH'],
+        ['pmeds',         dbc, f'primary_care_meds_{db}_archive', 'Person_ID_DEID',                 'ProcessingPeriodDate'],
+        ['sgss',          dbc, f'sgss_{db}_archive',              'PERSON_ID_DEID',                 'Specimen_Date'],
+        ['sus',           dbc, f'sus_{db}_archive',               'NHS_NUMBER_DEID',                'EPISODE_START_DATE'],
+      
+        # -----------------------------------------------------------------------------
+        # Additonal datasets needed for the data curation pipeline for this project
+        # -----------------------------------------------------------------------------
+        ['hes_ae',        dbc, f'hes_ae_all_years_archive',       'PERSON_ID_DEID',                 'ARRIVALDATE'],
+        ['hes_op',        dbc, f'hes_op_all_years_archive',       'PERSON_ID_DEID',                 'APPTDATE'],
+        ['hes_cc',        dbc, f'hes_cc_all_years_archive',       'PERSON_ID_DEID',                 'CCSTARTDATE'],
+        ['hes_apc_otr',   dbc, f'hes_apc_otr_all_years_archive',  'PERSON_ID_DEID',                 'EPISTART'],
+        ['hes_op_otr',    dbc, f'hes_op_otr_all_years_archive',   'PERSON_ID_DEID',                 'APPTDATE'],
+        ['hes_apc_mat',   dbc, f'hes_apc_mat_all_years_archive',  'PERSON_ID_DEID',                 'ANASDATE'],
+        ['chess',         dbc, f'chess_{db}_archive',             'PERSON_ID_DEID',                 'InfectionSwabDate'],
+        ['vacc',          dbc, f'vaccine_status_{db}_archive',    'PERSON_ID_DEID',                 'RECORDED_DATE'],
+    ], columns=['dataset', 'database', 'table', 'id', 'date']).set_index('dataset')
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 4.2 Datasets Archived States
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### 4.2.1 Create
+
+# COMMAND ----------
+
+# DBTITLE 1,Override PARAMETERS_RE_DERIVE_TOGGLE if never run before
+from mythoslib import table_exists
+if not table_exists(f'{Project.name}_parameters_df_datasets', Project.dsa):
+    PARAMETERS_RE_DERIVE_TOGGLE = True
+
+# COMMAND ----------
+
+# DBTITLE 1,Derive parameters_df_datasets
+from pyspark.sql.column import Column 
+from typing import Iterable 
+def _aggregate_archived_on(dataset: str, database: str, table: str, filters: Iterable[Column]) -> pd.DataFrame:
+    """ Given a dataset name and relevant location (database and table) and any boolean filters to apply,
+    Extracts the latest (most recent) archived_on date that matches the given filters, plus the count of rows for that batch. """
+    # extract latest (most recent) archived_on date before the pipeline_production_date
+    # Load up the dataset table from the given location
+    df_dataset = spark.table(f'{database}.{table}')
+
+    # Group by archival date, aggregate row counts per distinct archival date, filter by provided filters
+    df_grouped = (
+        df_dataset 
+        .groupBy('archived_on')
+        .agg(f.count(f.lit(1)).alias('n_rows'))
+        .where(filters)
+    )
+
+    result = (
+        df_grouped 
+        # Pick the latest date (that wasn't filtered out) and its metadata
+        .orderBy(f.desc('archived_on'))
+        .limit(1)
+        .withColumn('dataset', f.lit(dataset))
+        .select('dataset', 'archived_on', 'n_rows')
+    )
+
+    return result.toPandas()
+
+def _extract_latest_archived_on(dataset, database, table, pipeline_production_date = Project.pipeline_production_date):
+    """ Given a dataset name and location, extracts the latest archival date BEFORE the pipeline_production_date and its row count. """
+    return _aggregate_archived_on(dataset, database, table, filters=(f.col('archived_on') <= pipeline_production_date))
+
+def _extract_earliest_archived_on(dataset, database, table, study_start_date = Project.study_start_date):
+    """ Given a dataset name and location, extracts the closest archival date that comes AFTER the study_start_date and it's row count. """
+    return _aggregate_archived_on(dataset, database, table, filters=(f.col('archived_on') >= study_start_date))
+
+# We will now derive the parameters_df_datasets dataframe, containing the latest archival dates and row counts per dataset
+# this will not run each time the Parameters notebook is run in annother notebook - it will only run if the toggle is switched to True
+if PARAMETERS_RE_DERIVE_TOGGLE:
+    # Initialise
+    latest_archived_on = []
+    # Iterate the datasets specified in Project.datasets
+    for dataset, row in (pbar := tqdm(Project.datasets.iterrows(), total=Project.datasets.shape[0])):
+        pbar.set_description(f'Parsing {dataset}')
+        latest_archived_on.append(_extract_latest_archived_on(dataset, row.database, row.table))
+
+    latest_archived_on = pd.concat(latest_archived_on)
+    display(latest_archived_on)
+
+# COMMAND ----------
+
+# DBTITLE 1,Save parameters_df_datasets to DB
+# this will not run each time the Parameters notebook is run in annother notebook - it will only run if the toggle is switched to True
+if PARAMETERS_RE_DERIVE_TOGGLE:
+    parameters_df_datasets = spark.createDataFrame(pd.merge(Project.datasets, latest_archived_on, on='dataset'))
+    save_table(df=parameters_df_datasets, out_name=f'{Project.name}_parameters_df_datasets', save_previous=True)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### 4.2.2 Import
+# MAGIC Import the `parameters_df_datasets` table as a Pandas DataFrame under `Project`. 
+
+# COMMAND ----------
+
+# DBTITLE 1,Load parameters_df_datasets
+Project.parameters_df_datasets = spark.table(f'{Project.dsa}.{Project.name}_parameters_df_datasets').toPandas().set_index('dataset')
+
+# COMMAND ----------
+
+# DBTITLE 1,Define load_dataset_batch
+# This function loads a specified dataset and compares the expected number of rows (the number that were found when running the parameters notebook in full) against the number of rows observed (the number that are found when extracting the data from the archive in a subsequent notebook). This alerst us to the number of rows being changed in the archive tables, which the data wranglers control.
+
+# Successor to extract_batch_from_archive
+
+from pyspark.sql import DataFrame
+def load_dataset_batch(dataset: str, parameters_df_datasets: pd.DataFrame = Project.parameters_df_datasets) -> DataFrame:
+    # Get the element from Project.parameters_df_datasets corresponding to the specified dataset 
+    if dataset not in parameters_df_datasets.index:
+        raise ValueError(f'Dataset "{dataset}" not found in parameters_df_datasets. Available options: {parameters_df_datasets.index.values}')
+    batch = parameters_df_datasets.loc[dataset]
+
+    # Create path and extract archived on
+    batch_path = f'{batch.database}.{batch.table}'
+
+    # Extract batch 
+    df = spark.table(batch_path).where(f.col('archived_on') == batch.archived_on)
+
+    # Check observed number of rows against expected number
+    n_rows_observed = df.count()
+    assert n_rows_observed > 0, 'Empty dataset - n_rows_observed = 0'
+    assert n_rows_observed == batch.n_rows, f'Non-matching dataset size: Expected {batch.n_rows} rows, got {n_rows_observed}.'
+
+    return df 
+
+def extract_batch_from_archive(df_datasets, dataset) -> None:
+    raise DeprecationWarning('This function has been replaced by `load_dataset_batch()`')
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## 4.3 Curated Data Paths
+# MAGIC
+# MAGIC These are paths to data tables curated in subsequent notebooks that may be needed in subsequent notebooks from which they were curated
+
+# COMMAND ----------
+
+# DBTITLE 1,Define curated data paths
+class Paths:
+
+    dsa = Project.dsa 
+    proj = Project.name 
+    db = Project.db
+    dbc = Project.dbc
+
+    # reference tables
+    ref_bhf_phenotypes  = 'bhf_cvd_covid_uk_byod.bhf_covid_uk_phenotypes_20210127'
+    ref_geog            = 'dss_corporate.ons_chd_geo_listings'
+    ref_imd             = 'dss_corporate.english_indices_of_dep_v02'
+    ref_gp_refset       = 'dss_corporate.gpdata_snomed_refset_full'
+    ref_gdppr_refset    = 'dss_corporate.gdppr_cluster_refset'
+    ref_icd10           = 'dss_corporate.icd10_group_chapter_v01'
+    ref_opcs4           = 'dss_corporate.opcs_codes_v02'
+    ref_bnf_code_info   = 'dss_corporate.bnf_code_information'
+
+    data_gdppr          = f'{dbc}.gdppr_{db}_archive'
+
+    # curated tables
+    cur_hes_apc_long    = f'{dsa}.{proj}_cur_hes_apc_long'
+    cur_hes_op_long     = f'{dsa}.{proj}_cur_hes_op_long'
+    cur_deaths_long     = f'{dsa}.{proj}_cur_deaths_long'
+    cur_deaths_wide     = f'{dsa}.{proj}_cur_deaths_wide'
+    cur_skinny          = f'{dsa}.hds_curated_assets__demographics_2025_07_28'
+
+    # temporary tables
+    tmp_quality_assurance        = f'{dsa}.{proj}_tmp_quality_assurance'
+    tmp_inc_exc_cohort           = f'{dsa}.{proj}_tmp_inc_exc_cohort'
+    tmp_inc_exc_cohort_2         = f'{dsa}.{proj}_tmp_inc_exc_cohort_2'
+    tmp_inc_exc_flow             = f'{dsa}.{proj}_tmp_inc_exc_flow'
+    tmp_inc_exc_flow_2           = f'{dsa}.{proj}_tmp_inc_exc_flow_2'
+
+    tmp_history_all              = f'{dsa}.{proj}_tmp_history_all'
+    tmp_history_wide             = f'{dsa}.{proj}_tmp_history_wide'
+
+    tmp_hes_apc_prepared         = f'{dsa}.{proj}_tmp_hes_apc_prepared'
+    tmp_hes_op_prepared          = f'{dsa}.{proj}_tmp_hes_op_prepared'
+    tmp_gdppr_prepared           = f'{dsa}.{proj}_tmp_gdppr_prepared'
+
+    # out tables
+    out_codelist_cvd_nonfatal                  = f'{dsa}.{proj}_out_codelist_cvd_nonfatal'
+    out_codelist_cvd_fatal                     = f'{dsa}.{proj}_out_codelist_cvd_fatal'
+    out_codelist_cvd_history                   = f'{dsa}.{proj}_out_codelist_cvd_history'
+    
+    out_codelist_obesity_history               = f'{dsa}.{proj}_out_codelist_obesity_history'
+    out_codelist_incident_obesity              = f'{dsa}.{proj}_out_codelist_incident_obesity'
+
+    out_codelist_quality_assurance             = f'{dsa}.{proj}_out_codelist_quality_assurance'
+    out_codelist_covariates                    = f'{dsa}.{proj}_out_codelist_covariates'
+    out_codelist_covariates_markers            = f'{dsa}.{proj}_out_codelist_covariates_markers'
+    out_codelist_covariates_chronic_conditions = f'{dsa}.{proj}_out_codelist_covariates_chronic_conditions'
+
+    out_cohort                        = f'{dsa}.{proj}_out_cohort'
+
+    out_covariates                    = f'{dsa}.{proj}_out_covariates'
+    out_covariates_markers            = f'{dsa}.{proj}_out_covariates_markers'
+    out_covariates_chronic_conditions = f'{dsa}.{proj}_out_covariates_chronic_conditions'
+    out_exposures_markers             = f'{dsa}.{proj}_out_exposures_markers'
+    
+    out_outcomes                      = f'{dsa}.{proj}_out_outcomes'
+    out_outcomes_wide                 = f'{dsa}.{proj}_out_outcomes_wide'
+    out_outcomes_grouped              = f'{dsa}.{proj}_out_outcomes_grouped'
+    out_outcomes_grouped_wide         = f'{dsa}.{proj}_out_outcomes_grouped_wide'
+    out_outcomes_competing            = f'{dsa}.{proj}_out_outcomes_competing'
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC # 5. Summary
+
+# COMMAND ----------
+
+# print variables, archived_on table, and paths for reference in subsequent notebooks
+print('Project:')
+print("  {0:<22}".format('Project.name') + " = " + f'{Project.name}')
+print("  {0:<22}".format('Project.pipeline_production_date') + " = " + f'{Project.pipeline_production_date}') 
+print("")
+print('Study dates:')    
+print("  {0:<22}".format('Project.study_start_date') + " = " + f'{Project.study_start_date}') 
+print("  {0:<22}".format('Project.study_end_date') + " = " + f'{Project.study_end_date}') 
+ 

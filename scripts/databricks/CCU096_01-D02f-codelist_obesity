@@ -1,0 +1,153 @@
+# Databricks notebook source
+# MAGIC %md # CCU096_01-D02f_codelist_obesity
+# MAGIC
+# MAGIC **Description** This notebook creates some of the codelists needed for CCU096_01: 
+# MAGIC  - History of obesity (including codes for childhood obesity)
+# MAGIC  - Incident obesity
+# MAGIC
+# MAGIC **Authors** Stelios Boulitsakis Logothetis and Robert Fletcher
+# MAGIC
+# MAGIC 
+# MAGIC
+# MAGIC **Acknowledgements** Based on previous work by Carmen Petitjean, Spencer Keene for CCU004_03 and the Health Data Science Team, BHF Data Science Centre.
+# MAGIC
+# MAGIC **Data Output**
+# MAGIC - **`out_codelist_obesity_history`** : Codes to identify obesity history
+# MAGIC - **`out_codelist_incident_obesity`** : Codes to identify incident obesity
+
+# COMMAND ----------
+
+# MAGIC %md # 0. Setup
+
+# COMMAND ----------
+
+# DBTITLE 1,Libraries
+import pyspark.sql.functions as f
+import pandas as pd
+from typing import Dict 
+from pyspark.sql import DataFrame
+from functools import reduce
+
+# COMMAND ----------
+
+# DBTITLE 1,Common Functions
+# MAGIC %run "shds/common/functions"
+
+# COMMAND ----------
+
+# MAGIC %md # 1. Parameters
+
+# COMMAND ----------
+
+# MAGIC %run "./CCU096_01-D01-parameters"
+
+# COMMAND ----------
+
+# MAGIC %md # 2. Data Sources
+
+# COMMAND ----------
+
+# DBTITLE 1,Import reference tables
+icd10 = spark.table(Paths.ref_icd10)
+gdppr_refset = spark.table(Paths.ref_gdppr_refset)
+
+# COMMAND ----------
+
+# MAGIC %md # 3. Create
+# MAGIC
+# MAGIC Any data-driven code-lists should be derived here. Otherwise, we simply load each codelist from the relevant CSV file. 
+
+# COMMAND ----------
+
+# DBTITLE 1,Initialise results storage
+codelists_all: Dict[str, DataFrame] = dict()
+
+# COMMAND ----------
+
+# MAGIC %md ## 3.1. Obesity history
+# MAGIC
+# MAGIC **Protocol - Obesity History Codelist (includes codes for childhood obesity)**
+# MAGIC
+# MAGIC | Incident obesity | Code            | Definition                                                                |
+# MAGIC | ---------------- | --------------- | ------------------------------------------------------------------------- |
+# MAGIC | ICD-10           | E66*            | Obesity                                                                   |
+# MAGIC | SNOMED CT        | 22910008        | Impaired glucose tolerance in obese (disorder)                            |
+# MAGIC | SNOMED CT        | 81531005        | Diabetes mellitus type 2 in obese (disorder)                              |
+# MAGIC | SNOMED CT        | 276792008       | Pulmonary hypertension with extreme obesity (disorder)                    |
+# MAGIC | SNOMED CT        | 162864005       | Body mass index 30+ - obesity (finding)                                   |
+# MAGIC | SNOMED CT        | 408512008       | Body mass index 40+ - severely obese (finding)                            |
+# MAGIC | SNOMED CT        | 1186852004      | Benign intracranial hypertension due to obesity (disorder)                |
+# MAGIC | SNOMED CT        | 914721000000105 | Obese class I (body mass index 30.0 - 34.9) (finding)                     |
+# MAGIC | SNOMED CT        | 914731000000107 | Obese class II (body mass index 35.0 - 39.9) (finding)                    |
+# MAGIC | SNOMED CT        | 914741000000103 | Obese class III (body mass index equal to or greater than 40.0) (finding) |
+# MAGIC | SNOMED CT        | 921031000000102 | Child body mass index 98.1st-99.6th centile (finding)                     |
+# MAGIC | SNOMED CT        | 921051000000109 | Child body mass index greater than 99.6th centile (finding)               |
+
+# COMMAND ----------
+
+# DBTITLE 1,Import obesity history CSV
+codelist_obesity_history = (
+    spark.createDataFrame(
+        pd.read_csv('./codelists/coexisting_chronic_medical_conditions.csv')
+        [['name', 'terminology', 'code', 'term']]
+    )
+    .where(f.col('name') == 'obesity')
+)
+
+display(codelist_obesity_history)
+
+codelists_all['obesity_history'] = codelist_obesity_history
+
+# COMMAND ----------
+
+# MAGIC %md ## 3.2. Incident obesity (codes for childhood obesity removed)
+# MAGIC
+# MAGIC **Protocol - Incident Obesity Codelist**
+# MAGIC
+# MAGIC | Incident obesity | Code            | Definition                                                                |
+# MAGIC | ---------------- | --------------- | ------------------------------------------------------------------------- |
+# MAGIC | ICD-10           | E66*            | Obesity                                                                   |
+# MAGIC | SNOMED CT        | 22910008        | Impaired glucose tolerance in obese (disorder)                            |
+# MAGIC | SNOMED CT        | 81531005        | Diabetes mellitus type 2 in obese (disorder)                              |
+# MAGIC | SNOMED CT        | 276792008       | Pulmonary hypertension with extreme obesity (disorder)                    |
+# MAGIC | SNOMED CT        | 162864005       | Body mass index 30+ - obesity (finding)                                   |
+# MAGIC | SNOMED CT        | 408512008       | Body mass index 40+ - severely obese (finding)                            |
+# MAGIC | SNOMED CT        | 1186852004      | Benign intracranial hypertension due to obesity (disorder)                |
+# MAGIC | SNOMED CT        | 914721000000105 | Obese class I (body mass index 30.0 - 34.9) (finding)                     |
+# MAGIC | SNOMED CT        | 914731000000107 | Obese class II (body mass index 35.0 - 39.9) (finding)                    |
+# MAGIC | SNOMED CT        | 914741000000103 | Obese class III (body mass index equal to or greater than 40.0) (finding) |
+
+# COMMAND ----------
+
+# DBTITLE 1,Create incident obesity codelist
+codelist_incident_obesity = (
+    codelist_obesity_history
+    .where(~f.col('term').rlike('Child'))
+)
+display(codelist_incident_obesity)
+
+codelists_all['incident_obesity'] = codelist_incident_obesity
+
+# COMMAND ----------
+
+# MAGIC %md # 4. Check
+
+# COMMAND ----------
+
+# DBTITLE 1,Check format of output codelists
+count_nulls = lambda df: sum(df.select("*").where(f.col(_).isNull()).count() for _ in df.columns)
+required_columns = ['name', 'terminology', 'code', 'term']
+
+for key, codelist in codelists_all.items():
+    assert set(codelist.columns) == set(required_columns), f"Codelist {key} is either missing required columns or has extraneous ones"
+    assert codelist.count() > 0, f"Codelist {key} is empty" 
+    assert count_nulls(codelist) == 0, f'Codelist {key} contains NULLs'
+
+# COMMAND ----------
+
+# MAGIC %md # 5. Save
+
+# COMMAND ----------
+
+save_table(df=codelist_obesity_history, out_name=f'{Project.name}_out_codelist_obesity_history', save_previous=False) 
+save_table(df=codelist_incident_obesity, out_name=f'{Project.name}_out_codelist_incident_obesity', save_previous=False)

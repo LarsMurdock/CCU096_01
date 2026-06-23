@@ -1,0 +1,1132 @@
+name,terminology,code,term
+rheumatoid arthritis,ICD10,J990,Rheumatoid lung disease M05.1
+rheumatoid arthritis,ICD10,M05,Seropositive rheumatoid arthritis
+rheumatoid arthritis,ICD10,M050,Felty syndrome
+rheumatoid arthritis,ICD10,M051,Rheumatoid lung disease J99.0
+rheumatoid arthritis,ICD10,M052,Rheumatoid vasculitis
+rheumatoid arthritis,ICD10,M053,Rheumatoid arthritis with involvement of other organs and systems
+rheumatoid arthritis,ICD10,M058,Other seropositive rheumatoid arthritis
+rheumatoid arthritis,ICD10,M059,"Seropositive rheumatoid arthritis, unspecified"
+rheumatoid arthritis,ICD10,M060,Seronegative rheumatoid arthritis
+rheumatoid arthritis,ICD10,M062,Rheumatoid bursitis
+rheumatoid arthritis,ICD10,M063,Rheumatoid nodule
+rheumatoid arthritis,ICD10,M068,Other specified rheumatoid arthritis
+rheumatoid arthritis,ICD10,M069,"Rheumatoid arthritis, unspecified"
+rheumatoid arthritis,SNOMED CT,7607008,Pericarditis co-occurrent with extraarticular rheumatoid arthritis
+rheumatoid arthritis,SNOMED CT,21430002,Dilated cardiomyopathy secondary to rheumatoid arthritis
+rheumatoid arthritis,SNOMED CT,28880005,Rheumatoid carditis
+rheumatoid arthritis,SNOMED CT,33719002,Subcutaneous rheumatoid nodule
+rheumatoid arthritis,SNOMED CT,50782009,Rheumatoid nodule
+rheumatoid arthritis,SNOMED CT,52661003,Extra-articular rheumatoid process
+rheumatoid arthritis,SNOMED CT,54867000,Rheumatoid fibrosing alveolitis
+rheumatoid arthritis,SNOMED CT,57160007,Felty's syndrome
+rheumatoid arthritis,SNOMED CT,59165007,Rheumatoid scleritis
+rheumatoid arthritis,SNOMED CT,69896004,Rheumatoid arthritis
+rheumatoid arthritis,SNOMED CT,86219005,Uveitis-rheumatoid arthritis syndrome
+rheumatoid arthritis,SNOMED CT,111218008,Rheumatoid arthritis with other visceral or systemic involvement
+rheumatoid arthritis,SNOMED CT,111280008,Rheumatoid pneumoconiosis
+rheumatoid arthritis,SNOMED CT,155621007,Rheumatoid lung
+rheumatoid arthritis,SNOMED CT,156471009,Rheumatoid arthritis
+rheumatoid arthritis,SNOMED CT,156472002,Rheumatoid arthritis - multiple joint
+rheumatoid arthritis,SNOMED CT,156473007,Rheumatoid arthritis of shoulder
+rheumatoid arthritis,SNOMED CT,156474001,Rheumatoid arthritis of elbow
+rheumatoid arthritis,SNOMED CT,156475000,Rheumatoid arthritis of wrist
+rheumatoid arthritis,SNOMED CT,156476004,Rheumatoid arthritis - hand joint
+rheumatoid arthritis,SNOMED CT,156477008,Rheumatoid arthritis of hip
+rheumatoid arthritis,SNOMED CT,156478003,Rheumatoid arthritis of knee
+rheumatoid arthritis,SNOMED CT,156479006,Rheumatoid arthritis - ankle/foot
+rheumatoid arthritis,SNOMED CT,156480009,Rheumatoid arthritis - other joint
+rheumatoid arthritis,SNOMED CT,156481008,Rheumatoid arthritis NOS
+rheumatoid arthritis,SNOMED CT,193180002,Polyneuropathy in rheumatoid arthritis
+rheumatoid arthritis,SNOMED CT,193250002,Myopathy due to rheumatoid arthritis
+rheumatoid arthritis,SNOMED CT,195136004,Rheumatoid myocarditis
+rheumatoid arthritis,SNOMED CT,195138003,Rheumatoid carditis
+rheumatoid arthritis,SNOMED CT,196132006,Rheumatoid lung
+rheumatoid arthritis,SNOMED CT,201764007,Rheumatoid arthritis of cervical spine
+rheumatoid arthritis,SNOMED CT,201766009,Rheumatoid arthritis of shoulder
+rheumatoid arthritis,SNOMED CT,201767000,Rheumatoid arthritis of sternoclavicular joint
+rheumatoid arthritis,SNOMED CT,201768005,Rheumatoid arthritis of acromioclavicular joint
+rheumatoid arthritis,SNOMED CT,201769002,Rheumatoid arthritis of elbow
+rheumatoid arthritis,SNOMED CT,201770001,Rheumatoid arthritis of distal radioulnar joint
+rheumatoid arthritis,SNOMED CT,201771002,Rheumatoid arthritis of wrist
+rheumatoid arthritis,SNOMED CT,201772009,Rheumatoid arthritis of metacarpophalangeal joint
+rheumatoid arthritis,SNOMED CT,201773004,Rheumatoid arthritis of proximal interphalangeal joint of finger
+rheumatoid arthritis,SNOMED CT,201774005,Rheumatoid arthritis of distal interphalangeal joint of finger
+rheumatoid arthritis,SNOMED CT,201775006,Rheumatoid arthritis of hip
+rheumatoid arthritis,SNOMED CT,201776007,Rheumatoid arthritis of sacroiliac joint
+rheumatoid arthritis,SNOMED CT,201777003,Rheumatoid arthritis of knee
+rheumatoid arthritis,SNOMED CT,201778008,Rheumatoid arthritis of tibiofibular joint
+rheumatoid arthritis,SNOMED CT,201779000,Rheumatoid arthritis of ankle
+rheumatoid arthritis,SNOMED CT,201780002,Rheumatoid arthritis of subtalar joint
+rheumatoid arthritis,SNOMED CT,201781003,Rheumatoid arthritis of talonavicular joint
+rheumatoid arthritis,SNOMED CT,201782005,Rheumatoid arthritis of other tarsal joint
+rheumatoid arthritis,SNOMED CT,201783000,Rheumatoid arthritis of first metatarsophalangeal joint
+rheumatoid arthritis,SNOMED CT,201784006,Rheumatoid arthritis of lesser metatarsophalangeal joint
+rheumatoid arthritis,SNOMED CT,201785007,Rheumatoid arthritis of interphalangeal joint of toe
+rheumatoid arthritis,SNOMED CT,201786008,Rheumatoid vasculitis
+rheumatoid arthritis,SNOMED CT,201787004,Seronegative rheumatoid arthritis
+rheumatoid arthritis,SNOMED CT,201788009,Rheumatoid bursitis
+rheumatoid arthritis,SNOMED CT,201789001,Rheumatoid nodule
+rheumatoid arthritis,SNOMED CT,201790005,Rheumatoid arthritis - multiple joint
+rheumatoid arthritis,SNOMED CT,201791009,Flare of rheumatoid arthritis
+rheumatoid arthritis,SNOMED CT,201794001,Rheumatoid lung
+rheumatoid arthritis,SNOMED CT,201810001,Seropositive errosive rheumatoid arthritis
+rheumatoid arthritis,SNOMED CT,201811002,"[X]Seropositive rheumatoid arthritis, unspecified"
+rheumatoid arthritis,SNOMED CT,201813004,(Rheumatoid lung) or (Caplan's syndrome) or (fibrosing alveolitis associated with rheumatoid arthritis)
+rheumatoid arthritis,SNOMED CT,203729008,[X]Rheumatoid arthritis with involvement of other organs or systems
+rheumatoid arthritis,SNOMED CT,203730003,[X]Other seropositive rheumatoid arthritis
+rheumatoid arthritis,SNOMED CT,203732006,[X]Other specified rheumatoid arthritis
+rheumatoid arthritis,SNOMED CT,203746006,"[X]Seropositive rheumatoid arthritis, unspecified"
+rheumatoid arthritis,SNOMED CT,239791005,Seropositive rheumatoid arthritis
+rheumatoid arthritis,SNOMED CT,239792003,Seronegative rheumatoid arthritis
+rheumatoid arthritis,SNOMED CT,239793008,Rheumatoid arthritis with organ / system involvement
+rheumatoid arthritis,SNOMED CT,239794002,Fibrosing alveolitis associated with rheumatoid arthritis
+rheumatoid arthritis,SNOMED CT,239795001,Rheumatoid arthritis with multisystem involvement
+rheumatoid arthritis,SNOMED CT,239941000,Nailfold rheumatoid vasculitis
+rheumatoid arthritis,SNOMED CT,239942007,Systemic rheumatoid vasculitis
+rheumatoid arthritis,SNOMED CT,239943002,Necrotizing rheumatoid vasculitis
+rheumatoid arthritis,SNOMED CT,287006005,Rheumatoid arthritis of multiple joints
+rheumatoid arthritis,SNOMED CT,287007001,Rheumatoid arthritis of hand joint
+rheumatoid arthritis,SNOMED CT,287008006,Rheumatoid arthritis of ankle and/or foot
+rheumatoid arthritis,SNOMED CT,287009003,Rheumatoid arthritis - other joint
+rheumatoid arthritis,SNOMED CT,287010008,Rheumatoid arthritis NOS
+rheumatoid arthritis,SNOMED CT,308143008,Seropositive erosive rheumatoid arthritis
+rheumatoid arthritis,SNOMED CT,314765000,Rheumatoid melting disorder of cornea
+rheumatoid arthritis,SNOMED CT,398640008,Rheumatoid pneumoconiosis
+rheumatoid arthritis,SNOMED CT,398726004,Rheumatoid lung disease
+rheumatoid arthritis,SNOMED CT,399923009,Rheumatoid arteritis
+rheumatoid arthritis,SNOMED CT,400054000,Rheumatoid vasculitis
+rheumatoid arthritis,SNOMED CT,402426007,Rheumatoid nodulosis
+rheumatoid arthritis,SNOMED CT,402427003,Accelerated rheumatoid nodulosis
+rheumatoid arthritis,SNOMED CT,402428008,Accelerated rheumatoid nodulosis due to methotrexate
+rheumatoid arthritis,SNOMED CT,402429000,Rheumatoid linear subcutaneous bands
+rheumatoid arthritis,SNOMED CT,427770001,Rheumatoid arthritis of temporomandibular joint
+rheumatoid arthritis,SNOMED CT,429192004,Rheumatoid arthritis of foot
+rheumatoid arthritis,SNOMED CT,735599007,Erosion of joint surface co-occurrent and due to rheumatoid arthritis
+rheumatoid arthritis,SNOMED CT,735600005,Rheumatoid arthritis without erosion
+rheumatoid arthritis,SNOMED CT,781206002,Rheumatoid arthritis of joint of spine
+rheumatoid arthritis,SNOMED CT,143441000119108,Rheumatoid arthritis in remission
+rheumatoid arthritis,SNOMED CT,318861000119101,Seropositive rheumatoid arthritis of left hand
+rheumatoid arthritis,SNOMED CT,318931000119100,Seropositive rheumatoid arthritis of right hand
+rheumatoid arthritis,SNOMED CT,319081000119109,Seronegative rheumatoid arthritis of multiple sites
+rheumatoid arthritis,SNOMED CT,319841000119107,Rheumatoid lung disease with rheumatoid arthritis
+rheumatoid arthritis,SNOMED CT,319861000119106,Rheumatoid nodule of subcutaneous tissue of left elbow
+rheumatoid arthritis,SNOMED CT,319871000119100,Rheumatoid nodule of subcutaneous tissue of left hand
+rheumatoid arthritis,SNOMED CT,319941000119103,Rheumatoid nodule of subcutaneous tissue of right elbow
+rheumatoid arthritis,SNOMED CT,319951000119101,Rheumatoid nodule of subcutaneous tissue of right hand
+rheumatoid arthritis,SNOMED CT,408751000000108,[X]Other seropositive rheumatoid arthritis
+rheumatoid arthritis,SNOMED CT,414821000000101,"[X]Seropositive rheumatoid arthritis, unspecified"
+rheumatoid arthritis,SNOMED CT,425091000000101,[X]Rheumatoid arthritis with involvement of other organs or systems
+rheumatoid arthritis,SNOMED CT,425481000000106,[X]Other specified rheumatoid arthritis
+rheumatoid arthritis,SNOMED CT,471971000000101,"[X]Seropositive rheumatoid arthritis, unspecified"
+rheumatoid arthritis,SNOMED CT,646871000000103,Rheumatoid arthritis - other joint
+rheumatoid arthritis,SNOMED CT,646881000000101,Rheumatoid arthritis NOS
+rheumatoid arthritis,SNOMED CT,656651000000106,Rheumatoid arthritis of other tarsal joint
+rheumatoid arthritis,SNOMED CT,1073701000119107,Rheumatoid arthritis of left foot
+rheumatoid arthritis,SNOMED CT,1073711000119105,Rheumatoid arthritis of left hand
+rheumatoid arthritis,SNOMED CT,1073721000119103,Rheumatoid arthritis of left hip
+rheumatoid arthritis,SNOMED CT,1073731000119100,Rheumatoid arthritis of left knee
+rheumatoid arthritis,SNOMED CT,1073741000119109,Rheumatoid arthritis of left shoulder
+rheumatoid arthritis,SNOMED CT,1073751000119106,Rheumatoid arthritis of left wrist
+rheumatoid arthritis,SNOMED CT,1073781000119104,Rheumatoid arthritis of right foot
+rheumatoid arthritis,SNOMED CT,1073791000119101,Rheumatoid arthritis of right hand
+rheumatoid arthritis,SNOMED CT,1073801000119100,Rheumatoid arthritis of right hip
+rheumatoid arthritis,SNOMED CT,1073811000119102,Rheumatoid arthritis of right knee
+rheumatoid arthritis,SNOMED CT,1073821000119109,Rheumatoid arthritis of right shoulder
+rheumatoid arthritis,SNOMED CT,1073831000119107,Rheumatoid arthritis of right wrist
+rheumatoid arthritis,SNOMED CT,11055151000119108,Seropositive rheumatoid arthritis of multiple joints
+rheumatoid arthritis,SNOMED CT,15673361000119100,Rheumatoid nodule of subcutaneous tissue of bilateral elbows
+rheumatoid arthritis,SNOMED CT,15673521000119101,Rheumatoid nodule of subcutaneous tissue of bilateral hands
+rheumatoid arthritis,SNOMED CT,15686281000119101,Rheumatoid arthritis of bilateral feet
+rheumatoid arthritis,SNOMED CT,15687201000119107,Rheumatoid arthritis of bilateral knees
+rheumatoid arthritis,SNOMED CT,15687321000119109,Rheumatoid arthritis of bilateral hands
+rheumatoid arthritis,SNOMED CT,15691241000119101,Seronegative rheumatoid arthritis of bilateral knees
+rheumatoid arthritis,SNOMED CT,15691321000119101,Seronegative rheumatoid arthritis of bilateral wrists
+rheumatoid arthritis,SNOMED CT,15691881000119107,Seropositive rheumatoid arthritis of bilateral knees
+rheumatoid arthritis,SNOMED CT,16050071000119108,Seropositive rheumatoid arthritis of bilateral feet
+rheumatoid arthritis,SNOMED CT,16606721000119107,Seropositive rheumatoid arthritis in remission
+undifferentiated inflammatory arthritis,ICD10,M064,Inflammatory polyarthropathy
+undifferentiated inflammatory arthritis,SNOMED CT,239819001,Undifferentiated inflammatory oligoarthritis
+undifferentiated inflammatory arthritis,SNOMED CT,239820007,Undifferentiated inflammatory monoarthritis
+undifferentiated inflammatory arthritis,SNOMED CT,416956002,Undifferentiated inflammatory polyarthritis
+undifferentiated inflammatory arthritis,SNOMED CT,417180005,Undifferentiated inflammatory arthritis
+psoriatic arthritis,ICD10,L405,Arthropathic psoriasis M07.0-M07.3 M09.0
+psoriatic arthritis,ICD10,M070,Distal interphalangeal psoriatic arthropathy L40.5
+psoriatic arthritis,ICD10,M071,Arthritis mutilans L40.5
+psoriatic arthritis,ICD10,M072,Psoriatic spondylitis L40.5
+psoriatic arthritis,ICD10,M073,Other psoriatic arthropathies L40.5
+psoriatic arthritis,ICD10,M090,Juvenile arthritis in psoriasis L40.5
+psoriatic arthritis,SNOMED CT,19514005,Arthritis mutilans
+psoriatic arthritis,SNOMED CT,33339001,Psoriasis with arthropathy
+psoriatic arthritis,SNOMED CT,156370009,Psoriatic arthritis
+psoriatic arthritis,SNOMED CT,200956002,Psoriatic arthritis with spine involvement
+psoriatic arthritis,SNOMED CT,200957006,Psoriatic arthritis with distal interphalangeal joint involvement
+psoriatic arthritis,SNOMED CT,200958001,Psoriatic arthritis - destructive type
+psoriatic arthritis,SNOMED CT,200959009,Psoriatic arthropathy NOS
+psoriatic arthritis,SNOMED CT,203733001,[X]Other psoriatic arthropathies
+psoriatic arthritis,SNOMED CT,239812005,Psoriatic arthritis with distal interphalangeal joint involvement
+psoriatic arthritis,SNOMED CT,239813000,Psoriatic dactylitis
+psoriatic arthritis,SNOMED CT,431621000000107,[X]Other psoriatic arthropathies
+psoriatic arthritis,SNOMED CT,692631000000108,Psoriatic arthropathy NOS
+psoriatic arthritis,SNOMED CT,10629311000119107,Psoriatic arthritis mutilans
+axial spondyloarthritis,ICD10,M072,Psoriatic spondylitis L40.5
+axial spondyloarthritis,ICD10,M081,Juvenile ankylosing spondylitis
+axial spondyloarthritis,ICD10,M45,Ankylosing spondylitis
+axial spondyloarthritis,ICD10,M468,Other specified inflammatory spondylopathies
+axial spondyloarthritis,ICD10,M469,"Inflammatory spondylopathy, unspecified"
+axial spondyloarthritis,SNOMED CT,9631008,Ankylosing spondylitis
+axial spondyloarthritis,SNOMED CT,156619005,Ankylosing spondylitis
+axial spondyloarthritis,SNOMED CT,239805001,Juvenile ankylosing spondylitis
+axial spondyloarthritis,SNOMED CT,239810002,Ankylosing spondylitis with organ / system involvement
+axial spondyloarthritis,SNOMED CT,239811003,Ankylosing spondylitis with multisystem involvement
+axial spondyloarthritis,SNOMED CT,713777005,Non-radiographic axial spondyloarthritis
+axial spondyloarthritis,SNOMED CT,723116002,Axial spondyloarthritis
+axial spondyloarthritis,SNOMED CT,786077003,Ankylosing spondylitis co-occurrent with anterior uveitis
+axial spondyloarthritis,SNOMED CT,919541000000106,Axial spondyloarthritis
+axial spondyloarthritis,SNOMED CT,919551000000109,Axial spondyloarthritis
+systematic lupus erythematosus,ICD10,M32,Systemic lupus erythematosus
+systematic lupus erythematosus,ICD10,M321,Systemic lupus erythematosus with organ or system involvement
+systematic lupus erythematosus,ICD10,M328,Other forms of systemic lupus erythematosus
+systematic lupus erythematosus,ICD10,M329,"Systemic lupus erythematosus, unspecified"
+systematic lupus erythematosus,SNOMED CT,4676006,"Systemic lupus erythematosus glomerulonephritis syndrome, World Health Organization class II (disorder)"
+systematic lupus erythematosus,SNOMED CT,11013005,"Systemic lupus erythematosus glomerulonephritis syndrome, World Health Organization class VI (disorder)"
+systematic lupus erythematosus,SNOMED CT,25380002,Pericarditis co-occurrent and due to systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,36402006,"Systemic lupus erythematosus glomerulonephritis syndrome, World Health Organization class IV (disorder)"
+systematic lupus erythematosus,SNOMED CT,36471000,Dilated cardiomyopathy due to systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,52042003,"Systemic lupus erythematosus glomerulonephritis syndrome, World Health Organization class V (disorder)"
+systematic lupus erythematosus,SNOMED CT,68815009,Systemic lupus erythematosus glomerulonephritis syndrome (disorder)
+systematic lupus erythematosus,SNOMED CT,73286009,"Systemic lupus erythematosus glomerulonephritis syndrome, World Health Organization class I (disorder)"
+systematic lupus erythematosus,SNOMED CT,76521009,"Systemic lupus erythematosus glomerulonephritis syndrome, World Health Organization class III (disorder)"
+systematic lupus erythematosus,SNOMED CT,95332009,Rash of systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,95644001,Systemic lupus erythematosus encephalitis (disorder)
+systematic lupus erythematosus,SNOMED CT,196138005,Lung disease with systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,201436003,Drug-induced systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,230307005,Chorea in systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,239889005,Bullous systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,307755009,Renal tubulo-interstitial disorder in systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,403486000,Acute systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,403487009,Fulminating systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,417303004,Retinal vasculitis due to systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,724767000,Chorea co-occurrent and due to systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,724781003,Demyelination of central nervous system co-occurrent and due to systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,732960002,Secondary autoimmune hemolytic anemia co-occurrent and due to systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,773333003,Autosomal systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,1144921004,Disorder of heart due to systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,1144923001,Disorder of immune function due to systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,1144927000,Disorder of gastrointestinal tract due to systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,1144942002,Neuropsychiatric disorder due to systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,1144970000,Disorder of joint due to systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,1144973003,Disorder of kidney due to systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,1259517005,Dementia due to systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,72181000119109,Endocarditis due to systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,295101000119105,Nephropathy co-occurrent and due to systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,295111000119108,Nephrotic syndrome co-occurrent and due to systemic lupus erythematosus (disorder)
+systematic lupus erythematosus,SNOMED CT,308751000119106,Glomerular disease due to systemic lupus erythematosus (disorder)
+sjogrens syndrome,ICD10,M350,Sicca syndrome [Sjogren]
+sjogrens syndrome,SNOMED CT,44833003,Pseudolymphoma of lung in Sjogren's disease
+sjogrens syndrome,SNOMED CT,78946008,"Keratoconjunctivitis sicca, in Sjogren's syndrome"
+sjogrens syndrome,SNOMED CT,83901003,Sjogren's syndrome
+sjogrens syndrome,SNOMED CT,126766000,Lymphoepithelial sialadenitis of Sjogren's syndrome
+sjogrens syndrome,SNOMED CT,193253000,Myopathy due to Sjogren's disease
+sjogrens syndrome,SNOMED CT,196137000,Lung disease with Sjogren's disease
+sjogrens syndrome,SNOMED CT,239912009,Primary Sjogren's syndrome
+sjogrens syndrome,SNOMED CT,239913004,Primary Sjogren's syndrome with organ/system involvement
+sjogrens syndrome,SNOMED CT,239914005,Primary Sjogren's syndrome with multisystem involvement
+sjogrens syndrome,SNOMED CT,239915006,Secondary Sjogren's syndrome
+sjogrens syndrome,SNOMED CT,239916007,Secondary Sjogren's syndrome with organ/system involvement
+sjogrens syndrome,SNOMED CT,239917003,Secondary Sjogren's syndrome with multisystem involvement
+sjogrens syndrome,SNOMED CT,724782005,Demyelination of central nervous system co-occurrent and due to Sjogren disease
+sjogrens syndrome,SNOMED CT,320681000119102,Tubulointerstitial nephropathy due to Sjogren syndrome
+sjogrens syndrome,SNOMED CT,905381000000108,Systemic lupus erythematosus/Sjogren's overlap syndrome
+systemic sclerosis scleroderma,ICD10,M34,Systemic sclerosis
+systemic sclerosis scleroderma,ICD10,M340,Progressive systemic sclerosis
+systemic sclerosis scleroderma,ICD10,M341,CR(E)ST syndrome
+systemic sclerosis scleroderma,ICD10,M342,Systemic sclerosis induced by drugs and chemicals
+systemic sclerosis scleroderma,ICD10,M348,Other forms of systemic sclerosis
+systemic sclerosis scleroderma,ICD10,M349,"Systemic sclerosis, unspecified"
+systemic sclerosis scleroderma,SNOMED CT,31848007,"Calcinosis, Raynaud's phenomenon, esophageal dysmotility, sclerodactyly, and telangiectasia syndrome"
+systemic sclerosis scleroderma,SNOMED CT,35719004,Dilated cardiomyopathy secondary to scleroderma
+systemic sclerosis scleroderma,SNOMED CT,62382002,"Calcinosis, Raynaud's phenomenon, sclerodactyly, and telangiectasia syndrome"
+systemic sclerosis scleroderma,SNOMED CT,63115005,Hypothyroidism due to scleroderma
+systemic sclerosis scleroderma,SNOMED CT,87442008,Pericarditis co-occurrent and due to scleroderma
+systemic sclerosis scleroderma,SNOMED CT,89155008,Systemic sclerosis
+systemic sclerosis scleroderma,SNOMED CT,128457007,Scleroderma syndrome
+systemic sclerosis scleroderma,SNOMED CT,128459005,"Systemic sclerosis, limited"
+systemic sclerosis scleroderma,SNOMED CT,128460000,"Systemic sclerosis, diffuse"
+systemic sclerosis scleroderma,SNOMED CT,128461001,Systemic sclerosis sine scleroderma
+systemic sclerosis scleroderma,SNOMED CT,156451000,Scleroderma (& [systemic sclerosis])
+systemic sclerosis scleroderma,SNOMED CT,156454008,Scleroderma NOS
+systemic sclerosis scleroderma,SNOMED CT,193252005,Myopathy due to scleroderma
+systemic sclerosis scleroderma,SNOMED CT,196133001,Lung disease with systemic sclerosis
+systemic sclerosis scleroderma,SNOMED CT,201440007,Scleroderma (& [acrosclerosis] or [systemic sclerosis])
+systemic sclerosis scleroderma,SNOMED CT,201441006,Scleroderma
+systemic sclerosis scleroderma,SNOMED CT,203786003,[X]Other forms of systemic sclerosis
+systemic sclerosis scleroderma,SNOMED CT,236502006,Renal involvement in scleroderma
+systemic sclerosis scleroderma,SNOMED CT,236503001,Acute scleroderma renal crisis
+systemic sclerosis scleroderma,SNOMED CT,238936001,Sclerodermatomyositis
+systemic sclerosis scleroderma,SNOMED CT,239902002,Scleroderma with organ / system involvement
+systemic sclerosis scleroderma,SNOMED CT,239903007,Scleroderma with multisystem involvement
+systemic sclerosis scleroderma,SNOMED CT,239905000,Scleroderma variant
+systemic sclerosis scleroderma,SNOMED CT,267874003,Scleroderma
+systemic sclerosis scleroderma,SNOMED CT,268049000,Scleroderma (& [systemic sclerosis])
+systemic sclerosis scleroderma,SNOMED CT,274591000,[EDTA] Scleroderma associated with renal failure
+systemic sclerosis scleroderma,SNOMED CT,287005009,Scleroderma NOS
+systemic sclerosis scleroderma,SNOMED CT,298285004,Systemic sclerosis with limited cutaneous involvement
+systemic sclerosis scleroderma,SNOMED CT,299276009,Limited systemic sclerosis
+systemic sclerosis scleroderma,SNOMED CT,402713007,Cutaneous complication of systemic sclerosis
+systemic sclerosis scleroderma,SNOMED CT,403514006,Scleroderma-associated calcinosis
+systemic sclerosis scleroderma,SNOMED CT,403515007,Scleroderma-associated hypermelanosis
+systemic sclerosis scleroderma,SNOMED CT,403516008,Scleroderma-associated telangiectasia
+systemic sclerosis scleroderma,SNOMED CT,403517004,Scleroderma-associated nailfold telangiectasia
+systemic sclerosis scleroderma,SNOMED CT,403518009,Scleroderma-associated necrotizing vasculitis
+systemic sclerosis scleroderma,SNOMED CT,403519001,Scleroderma-associated poikiloderma
+systemic sclerosis scleroderma,SNOMED CT,403520007,Scleroderma-associated nail dystrophy
+systemic sclerosis scleroderma,SNOMED CT,444133002,Progressive systemic sclerosis
+systemic sclerosis scleroderma,SNOMED CT,715401008,Primary biliary cirrhosis co-occurrent with systemic scleroderma
+systemic sclerosis scleroderma,SNOMED CT,89681000119101,Glomerulonephritis co-occurrent and due to scleroderma
+systemic sclerosis scleroderma,SNOMED CT,322461000119108,Polyneuropathy due to systemic sclerosis
+systemic sclerosis scleroderma,SNOMED CT,411201000000107,Scleroderma associated with renal failure - European Dialysis and Transplant Association
+systemic sclerosis scleroderma,SNOMED CT,424881000000105,[X]Other forms of systemic sclerosis
+systemic sclerosis scleroderma,SNOMED CT,509461000000100,Progressive systemic sclerosis
+systemic sclerosis scleroderma,SNOMED CT,646861000000105,Scleroderma NOS
+systemic sclerosis scleroderma,SNOMED CT,855841000000105,Renal involvement in scleroderma
+systemic sclerosis scleroderma,SNOMED CT,857181000000104,Acute scleroderma renal crisis
+systemic sclerosis scleroderma,SNOMED CT,905371000000106,Polymyositis/scleroderma overlap syndrome
+inflammatory myositis,ICD10,M33,Dermatopolymyositis
+inflammatory myositis,ICD10,M330,Juvenile dermatomyositis
+inflammatory myositis,ICD10,M331,Other dermatomyositis
+inflammatory myositis,ICD10,M332,Polymyositis
+inflammatory myositis,ICD10,M339,"Dermatopolymyositis, unspecified"
+inflammatory myositis,ICD10,M360,Dermato(poly)myositis in neoplastic disease C00-D48
+inflammatory myositis,SNOMED CT,26889001,Myositis
+inflammatory myositis,SNOMED CT,31384009,Polymyositis
+inflammatory myositis,SNOMED CT,38826005,Dermatomyositis
+inflammatory myositis,SNOMED CT,46696008,Dilated cardiomyopathy secondary to dermatomyositis
+inflammatory myositis,SNOMED CT,156456005,Dermatomyositis
+inflammatory myositis,SNOMED CT,156457001,Polymyositis
+inflammatory myositis,SNOMED CT,193246009,Symptomatic inflammatory myopathy associated with another disorder
+inflammatory myositis,SNOMED CT,196136009,Lung disease co-occurrent with polymyositis
+inflammatory myositis,SNOMED CT,201445002,Dermatomyositis (& [Poikilodermatomyositis])
+inflammatory myositis,SNOMED CT,201447005,Dermatomyositis with malignant disease
+inflammatory myositis,SNOMED CT,201448000,"[X]Dermatopolymyositis, unspecified"
+inflammatory myositis,SNOMED CT,203785004,[X]Other dermatomyositis
+inflammatory myositis,SNOMED CT,203789005,[X]Dermato(poly)myositis in neoplastic disease classified elsewhere
+inflammatory myositis,SNOMED CT,203795006,"[X]Dermatopolymyositis, unspecified"
+inflammatory myositis,SNOMED CT,238935002,Dermatomyositis sine myositis
+inflammatory myositis,SNOMED CT,238936001,Sclerodermatomyositis
+inflammatory myositis,SNOMED CT,239898008,Polymyositis with malignant disease
+inflammatory myositis,SNOMED CT,239899000,Polymyositis associated with autoimmune disease
+inflammatory myositis,SNOMED CT,239901009,Dermatomyositis with malignant disease
+inflammatory myositis,SNOMED CT,240106005,Benign acute myositis
+inflammatory myositis,SNOMED CT,281357005,Idiopathic polymyositis
+inflammatory myositis,SNOMED CT,281358000,Idiopathic dermatomyositis
+inflammatory myositis,SNOMED CT,396229003,Adult type dermatomyositis
+inflammatory myositis,SNOMED CT,396230008,Dermatomyositis
+inflammatory myositis,SNOMED CT,402425006,Adult onset dermatomyositis
+inflammatory myositis,SNOMED CT,403635000,Drug-induced dermatomyositis
+inflammatory myositis,SNOMED CT,442486007,Paraneoplastic myositis
+inflammatory myositis,SNOMED CT,443899007,Autoimmune inflammation of skeletal muscle
+inflammatory myositis,SNOMED CT,445187004,Antisynthetase syndrome
+inflammatory myositis,SNOMED CT,702380008,Idiopathic inflammatory myopathy
+inflammatory myositis,SNOMED CT,715863001,Autoimmune necrotizing myopathy
+inflammatory myositis,SNOMED CT,766706007,Inflammatory myopathy with abundant macrophages
+inflammatory myositis,SNOMED CT,838366009,Anti-synthetase syndrome due to dermatomyositis
+inflammatory myositis,SNOMED CT,24861000119103,Symptomatic inflammatory myopathy
+inflammatory myositis,SNOMED CT,296241000119107,Disorder of respiratory system due to dermatomyositis
+inflammatory myositis,SNOMED CT,317941000119105,Myopathy co-occurrent and due to polymyositis
+inflammatory myositis,SNOMED CT,402621000000106,"[X]Dermatopolymyositis, unspecified"
+inflammatory myositis,SNOMED CT,419921000000105,"[X]Dermatopolymyositis, unspecified"
+inflammatory myositis,SNOMED CT,462101000000107,[X]Other dermatomyositis
+inflammatory myositis,SNOMED CT,477951000000102,[X]Dermato(poly)myositis in neoplastic disease classified elsewhere
+inflammatory myositis,SNOMED CT,522541000000104,Antisynthetase syndrome
+inflammatory myositis,SNOMED CT,707921000000105,Antisynthetase syndrome
+inflammatory myositis,SNOMED CT,15677281000119105,Myositis of bilateral lower legs
+mixed connective tissue disorder,ICD10,M351,Other overlap syndromes
+mixed connective tissue disorder,SNOMED CT,33110008,Mixed collagen vascular disease
+mixed connective tissue disorder,SNOMED CT,238936001,Sclerodermatomyositis
+mixed connective tissue disorder,SNOMED CT,239918008,Undifferentiated connective tissue disease
+mixed connective tissue disorder,SNOMED CT,276657008,Overlap syndrome
+mixed connective tissue disorder,SNOMED CT,398021003,Connective tissue disease overlap syndrome
+mixed connective tissue disorder,SNOMED CT,398049005,Mixed collagen vascular disease
+mixed connective tissue disorder,SNOMED CT,276681000000101,[X]Mixed connective tissue disease
+mixed connective tissue disorder,SNOMED CT,292691000000107,Mixed connective tissue disease
+mixed connective tissue disorder,SNOMED CT,905371000000106,Polymyositis/scleroderma overlap syndrome
+mixed connective tissue disorder,SNOMED CT,905381000000108,Systemic lupus erythematosus/Sjogren's overlap syndrome
+antiphospholipid syndrome,ICD10,D68.6,Other thrombophilia
+antiphospholipid syndrome,SNOMED CT,19267009,Lupus anticoagulant disorder
+antiphospholipid syndrome,SNOMED CT,26843008,Antiphospholipid syndrome
+antiphospholipid syndrome,SNOMED CT,201450008,Antiphospholipid syndrome
+antiphospholipid syndrome,SNOMED CT,239892009,Primary antiphospholipid syndrome
+antiphospholipid syndrome,SNOMED CT,239893004,Primary antiphospholipid syndrome with organ/system involvement
+antiphospholipid syndrome,SNOMED CT,239894005,Primary antiphospholipid syndrome with multisystem involvement
+antiphospholipid syndrome,SNOMED CT,239895006,Secondary antiphospholipid syndrome
+antiphospholipid syndrome,SNOMED CT,239896007,Secondary antiphospholipid syndrome with organ/system involvement
+antiphospholipid syndrome,SNOMED CT,239897003,Secondary antiphospholipid syndrome with multisystem involvement
+antiphospholipid syndrome,SNOMED CT,402865003,Systemic lupus erythematosus-associated antiphospholipid syndrome
+antiphospholipid syndrome,SNOMED CT,441079006,Thrombophilia due to antiphospholipid antibody
+antiphospholipid syndrome,SNOMED CT,609329007,Catastrophic antiphospholipid syndrome
+antiphospholipid syndrome,SNOMED CT,72161000119100,Antiphospholipid syndrome in pregnancy
+psoriasis,ICD10,L400,Psoriasis vulgaris
+psoriasis,ICD10,L401,Generalized pustular psoriasis
+psoriasis,ICD10,L402,Acrodermatitis continua
+psoriasis,ICD10,L403,Pustulosis palmaris et plantaris
+psoriasis,ICD10,L404,Guttate psoriasis
+psoriasis,ICD10,L408,Other psoriasis
+psoriasis,ICD10,L409,"Psoriasis, unspecified"
+psoriasis,ICD10,M070,Distal interphalangeal psoriatic arthropathy L40.5
+psoriasis,ICD10,M071,Arthritis mutilans L40.5
+psoriasis,ICD10,M072,Psoriatic spondylitis L40.5
+psoriasis,ICD10,M073,Other psoriatic arthropathies L40.5
+psoriasis,ICD10,M090,Juvenile arthritis in psoriasis L40.5
+psoriasis,SNOMED CT,10057001,Chronic lichenoid pityriasis (disorder)
+psoriasis,SNOMED CT,16341002,Parapsoriasis lichenoides (disorder)
+psoriasis,SNOMED CT,23854007,Small plaque parapsoriasis (disorder)
+psoriasis,SNOMED CT,25847004,Seborrheic psoriasis (disorder)
+psoriasis,SNOMED CT,27520001,Pustular psoriasis of palms and soles (disorder)
+psoriasis,SNOMED CT,28840001,"Generalized pustular psoriasis, exanthematous type (disorder)"
+psoriasis,SNOMED CT,37042000,Guttate psoriasis (disorder)
+psoriasis,SNOMED CT,56253000,Parapsoriasis en plaques (disorder)
+psoriasis,SNOMED CT,67081008,Large plaque parapsoriasis (disorder)
+psoriasis,SNOMED CT,81271001,Localized pustular psoriasis (disorder)
+psoriasis,SNOMED CT,83839005,Acrodermatitis continua of Hallopeau (disorder)
+psoriasis,SNOMED CT,86487001,Acute lichenoid pityriasis (disorder)
+psoriasis,SNOMED CT,88233000,Parapsoriasis (disorder)
+psoriasis,SNOMED CT,111188005,Psoriasiform napkin eruption (disorder)
+psoriasis,SNOMED CT,161562002,History of psoriasis (situation)
+psoriasis,SNOMED CT,200965009,Plaque psoriasis (disorder)
+psoriasis,SNOMED CT,200969003,Rupioid psoriasis (disorder)
+psoriasis,SNOMED CT,200973000,Pustular psoriasis (disorder)
+psoriasis,SNOMED CT,200977004,Erythrodermic psoriasis (disorder)
+psoriasis,SNOMED CT,200981004,Parapsoriasis atrophicans (disorder)
+psoriasis,SNOMED CT,200982006,Parapsoriasis herpetiformis (disorder)
+psoriasis,SNOMED CT,200983001,Pityriasis lichenoides (disorder)
+psoriasis,SNOMED CT,200984007,Parapsoriasis papulata (disorder)
+psoriasis,SNOMED CT,200985008,Parapsoriasis varioliformis (disorder)
+psoriasis,SNOMED CT,200990006,Retiform parapsoriasis (disorder)
+psoriasis,SNOMED CT,238600001,Flexural psoriasis (disorder)
+psoriasis,SNOMED CT,238601002,Unstable psoriasis (disorder)
+psoriasis,SNOMED CT,238602009,Psoriasis with eczema (disorder)
+psoriasis,SNOMED CT,238603004,Eczematized psoriasis (disorder)
+psoriasis,SNOMED CT,238608008,Psoriasis of scalp (disorder)
+psoriasis,SNOMED CT,238609000,Koebner psoriasis (disorder)
+psoriasis,SNOMED CT,238611009,Lapiere type of psoriasis (disorder)
+psoriasis,SNOMED CT,238612002,Generalized pustular psoriasis (disorder)
+psoriasis,SNOMED CT,238613007,Generalized pustular psoriasis of pregnancy (disorder)
+psoriasis,SNOMED CT,238615000,Juvenile pustular psoriasis (disorder)
+psoriasis,SNOMED CT,238616004,Infantile pustular psoriasis (disorder)
+psoriasis,SNOMED CT,238617008,Circinate and annular pustular psoriasis (disorder)
+psoriasis,SNOMED CT,239098009,Acropustulosis of infancy (disorder)
+psoriasis,SNOMED CT,239803008,Juvenile psoriatic arthritis with psoriasis (disorder)
+psoriasis,SNOMED CT,400069004,Nevoid psoriasis (disorder)
+psoriasis,SNOMED CT,402307000,Chronic large plaque psoriasis (disorder)
+psoriasis,SNOMED CT,402308005,Chronic small plaque psoriasis (disorder)
+psoriasis,SNOMED CT,402309002,Chronic guttate pattern psoriasis (disorder)
+psoriasis,SNOMED CT,402310007,Chronic stable plaque psoriasis (disorder)
+psoriasis,SNOMED CT,402311006,Actively extending plaque psoriasis (disorder)
+psoriasis,SNOMED CT,402312004,Acute guttate psoriasis (disorder)
+psoriasis,SNOMED CT,402313009,Guttate flare of psoriasis with preexisting plaques (disorder)
+psoriasis,SNOMED CT,402314003,Psoriasis of vulva (disorder)
+psoriasis,SNOMED CT,402315002,Psoriasis of penis (disorder)
+psoriasis,SNOMED CT,402316001,Psoriasis of perianal skin (disorder)
+psoriasis,SNOMED CT,402317005,Generalized psoriasis (disorder)
+psoriasis,SNOMED CT,402318000,Photoaggravated psoriasis (disorder)
+psoriasis,SNOMED CT,402319008,Psoriasis of scalp margin (disorder)
+psoriasis,SNOMED CT,402320002,Psoriasis of face (disorder)
+psoriasis,SNOMED CT,402321003,Non-pustular psoriasis of hands (disorder)
+psoriasis,SNOMED CT,402322005,Hypertrophic palmar psoriasis (disorder)
+psoriasis,SNOMED CT,402323000,Hypertrophic palmoplantar psoriasis (disorder)
+psoriasis,SNOMED CT,402324006,Non-pustular psoriasis of hands and feet (disorder)
+psoriasis,SNOMED CT,402325007,Drug-exacerbated psoriasis (disorder)
+psoriasis,SNOMED CT,402326008,Acute generalized pustular psoriasis de novo (disorder)
+psoriasis,SNOMED CT,402327004,Acute generalized pustular flare of preexisting plaque psoriasis (disorder)
+psoriasis,SNOMED CT,402329001,Early onset psoriasis type 1 (disorder)
+psoriasis,SNOMED CT,402330006,Onset of psoriasis in infancy (<1 year) (disorder)
+psoriasis,SNOMED CT,402331005,Onset of psoriasis in childhood (1-10 years) (disorder)
+psoriasis,SNOMED CT,402332003,Onset of psoriasis in adolescence (10-20 years) (disorder)
+psoriasis,SNOMED CT,402333008,Onset of psoriasis in early adulthood (20-40 years) (disorder)
+psoriasis,SNOMED CT,402334002,Late onset psoriasis type 2 (disorder)
+psoriasis,SNOMED CT,402335001,Familial psoriasis (disorder)
+psoriasis,SNOMED CT,402336000,Familial psoriasis with affected first degree relative (disorder)
+psoriasis,SNOMED CT,402337009,Familial psoriasis without affected first degree relative (disorder)
+psoriasis,SNOMED CT,402860008,Febrile ulceronecrotic pityriasis lichenoides acuta (disorder)
+psoriasis,SNOMED CT,404107008,Patch/plaque stage mycosis fungoides (disorder)
+psoriasis,SNOMED CT,702617007,Acute generalized exanthematous pustulosis (disorder)
+psoriasis,SNOMED CT,719810000,X-linked intellectual disability with seizure and psoriasis syndrome (disorder)
+psoriasis,SNOMED CT,721538000,Psoriasis of anogenital region (disorder)
+psoriasis,SNOMED CT,784327005,Pustular psoriasis of sole of foot (disorder)
+psoriasis,SNOMED CT,784328000,Pustular psoriasis of palm of hand (disorder)
+psoriasis,SNOMED CT,784339002,Deficiency of interleukin 36 receptor antagonist (disorder)
+psoriasis,SNOMED CT,1052325005,Exacerbation of psoriasis due to human immunodeficiency virus infection (disorder)
+psoriasis,SNOMED CT,1240464006,Follicular psoriasis (disorder)
+psoriasis,SNOMED CT,1251421004,Pustular psoriasis of palm and sole caused by drug (disorder)
+psoriasis,SNOMED CT,1254867007,Plaque psoriasis with pustules (disorder)
+psoriasis,SNOMED CT,1256080008,Hypertrophy of nail due to psoriasis (disorder)
+psoriasis,SNOMED CT,845091000000108,Education for psoriasis care (procedure)
+psoriasis,SNOMED CT,866311000000102,Psoriasis area and severity index (assessment scale)
+psoriasis,SNOMED CT,866331000000105,Assessment using psoriasis area and severity index (procedure)
+psoriasis,SNOMED CT,866341000000101,Psoriasis area and severity index score (observable entity)
+hidradenitis suppurativa,ICD10,L732,Hidradenitis suppurativa
+hidradenitis suppurativa,SNOMED CT,18638007,Hidradenitis suppurativa of anus (disorder)
+hidradenitis suppurativa,SNOMED CT,402826001,Axillary hidradenitis suppurativa (disorder)
+hidradenitis suppurativa,SNOMED CT,402827005,Anogenital hidradenitis suppurativa (disorder)
+hidradenitis suppurativa,SNOMED CT,402828000,Vulval hidradenitis suppurativa (disorder)
+crohns disease,ICD10,K50,Crohn disease [regional enteritis]
+crohns disease,ICD10,K500,Crohn disease of small intestine
+crohns disease,ICD10,K501,Crohn disease of large intestine
+crohns disease,ICD10,K508,Other Crohn disease
+crohns disease,ICD10,K509,"Crohn disease, unspecified"
+crohns disease,SNOMED CT,3815005,Crohn's disease of rectum (disorder)
+crohns disease,SNOMED CT,7620006,Crohn's disease of large bowel (disorder)
+crohns disease,SNOMED CT,34000006,Crohn's disease (disorder)
+crohns disease,SNOMED CT,38106008,Crohn's disease of ileum (disorder)
+crohns disease,SNOMED CT,50440006,Crohn's disease of colon (disorder)
+crohns disease,SNOMED CT,56287005,Crohn's disease of duodenum (disorder)
+crohns disease,SNOMED CT,56689002,Crohn's disease of small intestine (disorder)
+crohns disease,SNOMED CT,61424003,Crohn's disease of pylorus (disorder)
+crohns disease,SNOMED CT,70622003,Crohn's disease of pyloric antrum (disorder)
+crohns disease,SNOMED CT,71833008,Crohn's disease of small and large intestines (disorder)
+crohns disease,SNOMED CT,71913005,"Granulomatous enteritis, non-Crohn's disease (disorder)"
+crohns disease,SNOMED CT,91390005,Crohn's disease of jejunum (disorder)
+crohns disease,SNOMED CT,160386006,Family history: Crohn's disease (situation)
+crohns disease,SNOMED CT,196578009,Crohn's disease of oral soft tissues (disorder)
+crohns disease,SNOMED CT,196977009,Crohn's disease of terminal ileum (disorder)
+crohns disease,SNOMED CT,201805000,Juvenile arthritis in Crohn's disease (disorder)
+crohns disease,SNOMED CT,234999001,Crohn's disease of gingivae (disorder)
+crohns disease,SNOMED CT,235607002,Crohn's disease of esophagus (disorder)
+crohns disease,SNOMED CT,235664007,Crohn's disease of stomach (disorder)
+crohns disease,SNOMED CT,235745006,Non-Crohn's granulomatous colitis (disorder)
+crohns disease,SNOMED CT,235796008,Perianal Crohn's disease (disorder)
+crohns disease,SNOMED CT,264876008,Non-Crohn's granulomata (qualifier value)
+crohns disease,SNOMED CT,273364009,Crohn's Disease Activity Index (assessment scale)
+crohns disease,SNOMED CT,397172008,Gastrointestinal Crohn's disease (disorder)
+crohns disease,SNOMED CT,397173003,Crohn's disease of intestine (disorder)
+crohns disease,SNOMED CT,399946006,Crohn's disease of skin (disorder)
+crohns disease,SNOMED CT,402375009,Crohn's disease of vulva (disorder)
+crohns disease,SNOMED CT,402376005,Crohn's disease of penis (disorder)
+crohns disease,SNOMED CT,402377001,Crohn's disease of scrotum (disorder)
+crohns disease,SNOMED CT,402378006,Metastatic Crohn's disease of skin (disorder)
+crohns disease,SNOMED CT,410485009,Iritis with Crohn's disease (disorder)
+crohns disease,SNOMED CT,413276006,Crohn's stricture of colon (disorder)
+crohns disease,SNOMED CT,414153008,Exacerbation of Crohn's disease of large intestine (disorder)
+crohns disease,SNOMED CT,414154002,Exacerbation of Crohn's disease of small intestine (disorder)
+crohns disease,SNOMED CT,426549001,Crohn's disease in remission (disorder)
+crohns disease,SNOMED CT,721702009,Crohn disease of anal canal (disorder)
+crohns disease,SNOMED CT,722850002,Crohn's disease of gastrointestinal anastomosis (disorder)
+crohns disease,SNOMED CT,726101009,Extraintestinal Crohn's (disorder)
+crohns disease,SNOMED CT,733157003,Crohn disease of appendix (disorder)
+crohns disease,SNOMED CT,733533008,Perianal fistula due to Crohn's disease (disorder)
+crohns disease,SNOMED CT,737195007,Crohn disease of upper gastrointestinal tract (disorder)
+crohns disease,SNOMED CT,897114006,Simple Endoscopic Score for Crohn's Disease (assessment scale)
+crohns disease,SNOMED CT,1162446003,Assessment using Crohn's Disease Activity Index (procedure)
+crohns disease,SNOMED CT,1197692006,Ulcer of duodenum due to Crohn disease (disorder)
+crohns disease,SNOMED CT,1197707003,Ulcer of gastrointestinal anastomosis due to Crohn disease (disorder)
+crohns disease,SNOMED CT,1197714001,Gastric ulcer due to Crohn disease (disorder)
+crohns disease,SNOMED CT,1197727002,Crohn's disease of parastomal skin (disorder)
+crohns disease,SNOMED CT,1197732001,Crohn disease of colon and rectum (disorder)
+crohns disease,SNOMED CT,1197733006,Crohn disease of jejunum and ileum (disorder)
+crohns disease,SNOMED CT,8161000119106,Arthritis co-occurrent and due to Crohn's disease (disorder)
+crohns disease,SNOMED CT,112561000119108,History of Crohns disease (situation)
+crohns disease,SNOMED CT,1057341000000108,Signposting to Crohn's and Colitis UK (procedure)
+crohns disease,SNOMED CT,1085751000119100,Abscess of intestine co-occurrent and due to Crohn's disease of large intestine (disorder)
+crohns disease,SNOMED CT,1085761000119103,Complication due to Crohn's disease of large intestine (disorder)
+crohns disease,SNOMED CT,1085771000119109,Fistula of large intestine due to Crohn's disease (disorder)
+crohns disease,SNOMED CT,1085781000119107,Intestinal obstruction due to Crohn's disease of large intestine (disorder)
+crohns disease,SNOMED CT,1085791000119105,Rectal hemorrhage due to Crohn's disease of large intestine (disorder)
+crohns disease,SNOMED CT,1085801000119106,Abscess of intestine co-occurrent and due to Crohn's disease of small and large intestine (disorder)
+crohns disease,SNOMED CT,1085811000119109,Complication due to Crohn's disease of small and large intestines (disorder)
+crohns disease,SNOMED CT,1085821000119102,Fistula of intestine due to Crohn's disease of small and large intestine (disorder)
+crohns disease,SNOMED CT,1085831000119104,Intestinal obstruction due to Crohn's disease of small and large intestine (disorder)
+crohns disease,SNOMED CT,1085841000119108,Rectal hemorrhage due to Crohn's disease of small and large intestines (disorder)
+crohns disease,SNOMED CT,1085851000119105,Abscess of intestine co-occurrent and due to Crohn's disease of small intestine (disorder)
+crohns disease,SNOMED CT,1085861000119107,Complication due to Crohn's disease of small intestine (disorder)
+crohns disease,SNOMED CT,1085871000119101,Fistula of small intestine due to Crohn's disease (disorder)
+crohns disease,SNOMED CT,1085881000119103,Intestinal obstruction due to Crohn's disease of small intestine (disorder)
+crohns disease,SNOMED CT,1085891000119100,Rectal hemorrhage due to Crohn's disease of small intestine (disorder)
+crohns disease,SNOMED CT,1085901000119101,Abscess of intestine co-occurrent and due to Crohn's disease (disorder)
+crohns disease,SNOMED CT,1085911000119103,Complication due to Crohn's disease (disorder)
+crohns disease,SNOMED CT,1085931000119108,Intestinal obstruction due to Crohn's disease (disorder)
+crohns disease,SNOMED CT,1085941000119104,Rectal hemorrhage due to Crohn's disease (disorder)
+crohns disease,SNOMED CT,10743231000119101,Stenosis of small intestine co-occurrent and due to Crohn's disease (disorder)
+crohns disease,SNOMED CT,253855721000119107,Crohn disease of small intestine in remission (disorder)
+crohns disease,SNOMED CT,515623061000119105,Crohn disease of colon in remission (disorder)
+crohns disease,SNOMED CT,527788091000119106,Crohn disease of small intestine and large intestine in remission (disorder)
+ulcerative colitis,ICD10,K51,Ulcerative colitis
+ulcerative colitis,ICD10,K510,Ulcerative (chronic) pancolitis
+ulcerative colitis,ICD10,K512,Ulcerative (chronic) proctitis
+ulcerative colitis,ICD10,K513,Ulcerative (chronic) rectosigmoiditis
+ulcerative colitis,ICD10,K514,Inflammatory polyps
+ulcerative colitis,ICD10,K515,Left sided colitis
+ulcerative colitis,ICD10,K518,Other ulcerative colitis
+ulcerative colitis,ICD10,K519,"Ulcerative colitis, unspecified"
+ulcerative colitis,SNOMED CT,13470001,Chronic ulcerative ileocolitis (disorder)
+ulcerative colitis,SNOMED CT,14311001,Severe chronic ulcerative colitis (disorder)
+ulcerative colitis,SNOMED CT,15342002,Chronic ulcerative enterocolitis (disorder)
+ulcerative colitis,SNOMED CT,24829000,Eosinophilic ulcerative colitis (disorder)
+ulcerative colitis,SNOMED CT,52506002,Chronic ulcerative rectosigmoiditis (disorder)
+ulcerative colitis,SNOMED CT,78324009,Mild chronic ulcerative colitis (disorder)
+ulcerative colitis,SNOMED CT,78712000,Moderate chronic ulcerative colitis (disorder)
+ulcerative colitis,SNOMED CT,128600008,Acute ulcerative colitis (disorder)
+ulcerative colitis,SNOMED CT,201727001,Arthropathy in ulcerative colitis (disorder)
+ulcerative colitis,SNOMED CT,201807008,Juvenile arthritis in ulcerative colitis (disorder)
+ulcerative colitis,SNOMED CT,275129008,Family history: Ulcerative colitis (situation)
+ulcerative colitis,SNOMED CT,275549008,History of ulcerative colitis (situation)
+ulcerative colitis,SNOMED CT,404908004,Toxic megacolon due to ulcerative colitis (disorder)
+ulcerative colitis,SNOMED CT,410484008,Iritis with ulcerative colitis (disorder)
+ulcerative colitis,SNOMED CT,414156000,Exacerbation of ulcerative colitis (disorder)
+ulcerative colitis,SNOMED CT,441971007,Chronic left-sided ulcerative colitis (disorder)
+ulcerative colitis,SNOMED CT,442159003,Chronic ulcerative pancolitis (disorder)
+ulcerative colitis,SNOMED CT,444546002,Chronic ulcerative colitis (disorder)
+ulcerative colitis,SNOMED CT,445243001,Left sided ulcerative colitis (disorder)
+ulcerative colitis,SNOMED CT,732966008,Secondary autoimmune hemolytic anemia co-occurrent and due to ulcerative colitis (disorder)
+ulcerative colitis,SNOMED CT,1197015008,Gingival disease due to ulcerative colitis (disorder)
+ulcerative colitis,SNOMED CT,1085131000119105,Abscess of intestine co-occurrent and due to chronic ulcerative pancolitis (disorder)
+ulcerative colitis,SNOMED CT,1085231000119100,Abscess of intestine co-occurrent and due to chronic ulcerative rectosigmoiditis (disorder)
+ulcerative colitis,SNOMED CT,1092841000119100,Abscess of intestine co-occurrent and due to ulcerative colitis (disorder)
+ulcerative colitis,SNOMED CT,1092851000119103,Complication due to ulcerative colitis (disorder)
+ulcerative colitis,SNOMED CT,1092861000119101,Fistula of intestine due to ulcerative colitis (disorder)
+ulcerative colitis,SNOMED CT,1092871000119107,Intestinal obstruction due to ulcerative colitis (disorder)
+ulcerative colitis,SNOMED CT,1092881000119105,Rectal hemorrhage due to ulcerative colitis (disorder)
+ulcerative colitis,SNOMED CT,453720571000119100,Acute ulcerative rectosigmoiditis (disorder)
+ulcerative colitis,SNOMED CT,966011731000119103,Acute ulcerative pancolitis (disorder)
+ulcerative colitis,SNOMED CT,969688801000119108,Acute left-sided ulcerative colitis (disorder)
+coeliac disease,ICD10,K900,Coeliac disease
+coeliac disease,SNOMED CT,23829007,Celiac disease
+coeliac disease,SNOMED CT,61715008,Celiac disease with diffuse intestinal ulceration
+coeliac disease,SNOMED CT,91867008,Adult form of celiac disease
+coeliac disease,SNOMED CT,155842007,Coeliac disease
+coeliac disease,SNOMED CT,197477005,(Coeliac: [disease] or [rickets]) or (Gee-Herter disease)
+coeliac disease,SNOMED CT,197479008,Acquired celiac disease
+coeliac disease,SNOMED CT,197481005,Celiac disease NOS
+coeliac disease,SNOMED CT,266478000,Coeliac disease
+coeliac disease,SNOMED CT,396330006,Celiac crisis
+coeliac disease,SNOMED CT,396331005,Celiac disease
+coeliac disease,SNOMED CT,722386009,Celiac disease with epilepsy and cerebral calcification syndrome
+coeliac disease,SNOMED CT,770593004,Refractory celiac disease
+coeliac disease,SNOMED CT,606731000000100,Celiac disease NOS
+inflammatory bowel disease,ICD 10,K50,Crohn disease [regional enteritis]
+inflammatory bowel disease,ICD 10,K500,Crohn disease of small intestine
+inflammatory bowel disease,ICD 10,K501,Crohn disease of large intestine
+inflammatory bowel disease,ICD 10,K508,Other Crohn disease
+inflammatory bowel disease,ICD 10,K509,"Crohn disease, unspecified"
+inflammatory bowel disease,ICD 10,K51,Ulcerative colitis
+inflammatory bowel disease,ICD 10,K510,Ulcerative (chronic) pancolitis
+inflammatory bowel disease,ICD 10,K512,Ulcerative (chronic) proctitis
+inflammatory bowel disease,ICD 10,K513,Ulcerative (chronic) rectosigmoiditis
+inflammatory bowel disease,ICD 10,K514,Inflammatory polyps
+inflammatory bowel disease,ICD 10,K515,Left sided colitis
+inflammatory bowel disease,ICD 10,K518,Other ulcerative colitis
+inflammatory bowel disease,ICD 10,K519,"Ulcerative colitis, unspecified"
+inflammatory bowel disease,SNOMED CT,242004,Noninfectious jejunitis (disorder)
+inflammatory bowel disease,SNOMED CT,3815005,Crohn's disease of rectum (disorder)
+inflammatory bowel disease,SNOMED CT,7620006,Crohn's disease of large bowel (disorder)
+inflammatory bowel disease,SNOMED CT,13470001,Chronic ulcerative ileocolitis (disorder)
+inflammatory bowel disease,SNOMED CT,14066009,Noninfectious colitis (disorder)
+inflammatory bowel disease,SNOMED CT,14311001,Severe chronic ulcerative colitis (disorder)
+inflammatory bowel disease,SNOMED CT,15342002,Chronic ulcerative enterocolitis (disorder)
+inflammatory bowel disease,SNOMED CT,22207007,Chronic proliferative enteritis (disorder)
+inflammatory bowel disease,SNOMED CT,22231002,Allergic enteritis (disorder)
+inflammatory bowel disease,SNOMED CT,24526004,Inflammatory bowel disease (disorder)
+inflammatory bowel disease,SNOMED CT,25887009,Allergic sigmoiditis (disorder)
+inflammatory bowel disease,SNOMED CT,26006005,Allergic gastroenteritis (disorder)
+inflammatory bowel disease,SNOMED CT,27701000,Proctocolitis (disorder)
+inflammatory bowel disease,SNOMED CT,30304000,Allergic colitis (disorder)
+inflammatory bowel disease,SNOMED CT,30719001,Dietetic enteritis (disorder)
+inflammatory bowel disease,SNOMED CT,34000006,Crohn's disease (disorder)
+inflammatory bowel disease,SNOMED CT,38106008,Crohn's disease of ileum (disorder)
+inflammatory bowel disease,SNOMED CT,43752006,Inflammation of small intestine and colon (disorder)
+inflammatory bowel disease,SNOMED CT,49464009,Dietetic sigmoiditis (disorder)
+inflammatory bowel disease,SNOMED CT,50440006,Crohn's disease of colon (disorder)
+inflammatory bowel disease,SNOMED CT,52231000,Chronic ulcerative proctitis (disorder)
+inflammatory bowel disease,SNOMED CT,52506002,Chronic ulcerative rectosigmoiditis (disorder)
+inflammatory bowel disease,SNOMED CT,53372009,Noninfectious sigmoiditis (disorder)
+inflammatory bowel disease,SNOMED CT,56287005,Crohn's disease of duodenum (disorder)
+inflammatory bowel disease,SNOMED CT,56689002,Crohn's disease of small intestine (disorder)
+inflammatory bowel disease,SNOMED CT,61424003,Crohn's disease of pylorus (disorder)
+inflammatory bowel disease,SNOMED CT,64766004,Ulcerative colitis (disorder)
+inflammatory bowel disease,SNOMED CT,70622003,Crohn's disease of pyloric antrum (disorder)
+inflammatory bowel disease,SNOMED CT,70882003,Staphylococcal enteritis of chinchillas (disorder)
+inflammatory bowel disease,SNOMED CT,71207007,Noninfectious enteritis (disorder)
+inflammatory bowel disease,SNOMED CT,71833008,Crohn's disease of small AND large intestines (disorder)
+inflammatory bowel disease,SNOMED CT,72547003,Dietetic colitis (disorder)
+inflammatory bowel disease,SNOMED CT,78324009,Mild chronic ulcerative colitis (disorder)
+inflammatory bowel disease,SNOMED CT,78712000,Moderate chronic ulcerative colitis (disorder)
+inflammatory bowel disease,SNOMED CT,91390005,Crohn's disease of jejunum (disorder)
+inflammatory bowel disease,SNOMED CT,128600008,Acute ulcerative colitis (disorder)
+inflammatory bowel disease,SNOMED CT,196578009,Crohn's disease of oral soft tissues (disorder)
+inflammatory bowel disease,SNOMED CT,196976000,Regional enteritis of the jejunum (disorder)
+inflammatory bowel disease,SNOMED CT,196977009,Crohn's disease of terminal ileum (disorder)
+inflammatory bowel disease,SNOMED CT,196983007,Regional ileocolitis (disorder)
+inflammatory bowel disease,SNOMED CT,196987008,Ulcerative ileocolitis (disorder)
+inflammatory bowel disease,SNOMED CT,197024006,Allergic enterocolitis (disorder)
+inflammatory bowel disease,SNOMED CT,197533001,[X]Non-infective enteritis and colitis (disorder)
+inflammatory bowel disease,SNOMED CT,201727001,Arthropathy in ulcerative colitis (disorder)
+inflammatory bowel disease,SNOMED CT,201728006,Arthropathy in Crohn's disease (disorder)
+inflammatory bowel disease,SNOMED CT,201805000,Juvenile arthritis in Crohn's disease (disorder)
+inflammatory bowel disease,SNOMED CT,201807008,Juvenile arthritis in ulcerative colitis (disorder)
+inflammatory bowel disease,SNOMED CT,234999001,Crohn's disease of gingivae (disorder)
+inflammatory bowel disease,SNOMED CT,235607002,Crohn's disease of esophagus (disorder)
+inflammatory bowel disease,SNOMED CT,235664007,Crohn's disease of stomach (disorder)
+inflammatory bowel disease,SNOMED CT,235714007,Ulcerative enterocolitis (disorder)
+inflammatory bowel disease,SNOMED CT,235746007,Indeterminate colitis (disorder)
+inflammatory bowel disease,SNOMED CT,235796008,Perianal Crohn's disease (disorder)
+inflammatory bowel disease,SNOMED CT,266451002,Allergic gastroenteritis and colitis (disorder)
+inflammatory bowel disease,SNOMED CT,266999006,History of colitis (situation)
+inflammatory bowel disease,SNOMED CT,275549008,History of ulcerative colitis (situation)
+inflammatory bowel disease,SNOMED CT,295046003,Ulcerative proctocolitis (disorder)
+inflammatory bowel disease,SNOMED CT,307418008,Non-infective enteritis and colitis (disorder)
+inflammatory bowel disease,SNOMED CT,359656003,Idiopathic diffuse ulcerative nongranulomatous enteritis (disorder)
+inflammatory bowel disease,SNOMED CT,359664009,Idiopathic chronic inflammatory bowel disease (disorder)
+inflammatory bowel disease,SNOMED CT,397172008,Gastrointestinal Crohn's disease (disorder)
+inflammatory bowel disease,SNOMED CT,397173003,Crohn's disease of intestine (disorder)
+inflammatory bowel disease,SNOMED CT,410483002,Iritis with inflammatory bowel disease (disorder)
+inflammatory bowel disease,SNOMED CT,410484008,Iritis with ulcerative colitis (disorder)
+inflammatory bowel disease,SNOMED CT,414153008,Exacerbation of Crohn's disease of large intestine (disorder)
+inflammatory bowel disease,SNOMED CT,414154002,Exacerbation of Crohn's disease of small intestine (disorder)
+inflammatory bowel disease,SNOMED CT,414155001,Exacerbation of non-infective colitis (disorder)
+inflammatory bowel disease,SNOMED CT,414156000,Exacerbation of ulcerative colitis (disorder)
+inflammatory bowel disease,SNOMED CT,426549001,Crohn's disease in remission (disorder)
+inflammatory bowel disease,SNOMED CT,441971007,Chronic left-sided ulcerative colitis (disorder)
+inflammatory bowel disease,SNOMED CT,442159003,Chronic ulcerative pancolitis (disorder)
+inflammatory bowel disease,SNOMED CT,444546002,Chronic ulcerative colitis (disorder)
+inflammatory bowel disease,SNOMED CT,444548001,Ulcerative pancolitis (disorder)
+inflammatory bowel disease,SNOMED CT,445243001,Left sided ulcerative colitis (disorder)
+inflammatory bowel disease,SNOMED CT,697969008,Ulcerative colitis in remission (disorder)
+inflammatory bowel disease,SNOMED CT,720820000,Cutaneous photosensitivity and lethal colitis syndrome (disorder)
+inflammatory bowel disease,SNOMED CT,721686000,Inflammatory polyps co-occurrent and due to inflammatory bowel disease (disorder)
+inflammatory bowel disease,SNOMED CT,721702009,Crohn disease of anal canal (disorder)
+inflammatory bowel disease,SNOMED CT,722850002,Crohn's disease of gastrointestinal anastomosis (disorder)
+inflammatory bowel disease,SNOMED CT,733157003,Crohn disease of appendix (disorder)
+inflammatory bowel disease,SNOMED CT,735731005,Chronic non-infectious enteritis of uncertain etiology (disorder)
+inflammatory bowel disease,SNOMED CT,737193000,Allergic enteritis of small intestine (disorder)
+inflammatory bowel disease,SNOMED CT,737194006,Dietetic enteritis of small intestine (disorder)
+inflammatory bowel disease,SNOMED CT,737195007,Crohn disease of upper gastrointestinal tract (disorder)
+inflammatory bowel disease,SNOMED CT,8161000119106,Arthritis co-occurrent and due to Crohn's disease (disorder)
+inflammatory bowel disease,SNOMED CT,176371000000109,Exacerbation of Crohn's disease of small intestine
+inflammatory bowel disease,SNOMED CT,176381000000106,Exacerbation of Crohn's disease of large intestine
+inflammatory bowel disease,SNOMED CT,176391000000108,Exacerbation of ulcerative colitis
+inflammatory bowel disease,SNOMED CT,176401000000106,Exacerbation of non-infective colitis
+inflammatory bowel disease,SNOMED CT,400651000000102,[X]Non-infective enteritis and colitis (disorder)
+inflammatory bowel disease,SNOMED CT,412691000000107,[X]Other ulcerative colitis (disorder)
+inflammatory bowel disease,SNOMED CT,455601000000104,[X]Other Crohn's disease (disorder)
+inflammatory bowel disease,SNOMED CT,491331000000106,Indeterminate colitis
+inflammatory bowel disease,SNOMED CT,609161000000100,Allergic gastroenteritis NOS (disorder)
+inflammatory bowel disease,SNOMED CT,624791000000102,Crohn's disease of the large bowel NOS (disorder)
+inflammatory bowel disease,SNOMED CT,632681000000100,Crohn's disease of the ileum unspecified (disorder)
+inflammatory bowel disease,SNOMED CT,632691000000103,Crohn's disease of the ileum NOS (disorder)
+inflammatory bowel disease,SNOMED CT,793751000000105,Neonatal necrotising enterocolitis (disorder)
+inflammatory bowel disease,SNOMED CT,793781000000104,Perinatal necrotising enterocolitis (disorder)
+inflammatory bowel disease,SNOMED CT,822251000000103,Ulcerative pancolitis (disorder)
+inflammatory bowel disease,SNOMED CT,823401000000107,Left sided ulcerative colitis (disorder)
+inflammatory bowel disease,SNOMED CT,834601000000106,Ulcerative pancolitis
+inflammatory bowel disease,SNOMED CT,834721000000108,Left sided ulcerative colitis
+inflammatory bowel disease,SNOMED CT,939131000000104,History of Clostridium difficile infection (situation)
+inflammatory bowel disease,SNOMED CT,939141000000108,History of clostridium difficile
+inflammatory bowel disease,SNOMED CT,1085131000119105,Abscess of intestine co-occurrent and due to chronic ulcerative pancolitis (disorder)
+inflammatory bowel disease,SNOMED CT,1085181000119106,Abscess of intestine co-occurrent and due to chronic ulcerative proctitis (disorder)
+inflammatory bowel disease,SNOMED CT,1085231000119100,Abscess of intestine co-occurrent and due to chronic ulcerative rectosigmoiditis (disorder)
+inflammatory bowel disease,SNOMED CT,1085751000119100,Abscess of intestine co-occurrent and due to Crohn's disease of large intestine (disorder)
+inflammatory bowel disease,SNOMED CT,1085801000119106,Abscess of intestine co-occurrent and due to Crohn's disease of small and large intestine (disorder)
+inflammatory bowel disease,SNOMED CT,1085851000119105,Abscess of intestine co-occurrent and due to Crohn's disease of small intestine (disorder)
+inflammatory bowel disease,SNOMED CT,1085901000119101,Abscess of intestine co-occurrent and due to Crohn's disease (disorder)
+inflammatory bowel disease,SNOMED CT,1092841000119100,Abscess of intestine co-occurrent and due to ulcerative colitis (disorder)
+addisons disease,ICD10,E271,Primary adrenocortical insufficiency
+addisons disease,SNOMED CT,3498003,Total excision of pituitary gland by transsphenoidal approach
+addisons disease,SNOMED CT,11244009,"Polyglandular autoimmune syndrome, type 1"
+addisons disease,SNOMED CT,12427005,Congenital primary adrenocortical hypofunction
+addisons disease,SNOMED CT,14900002,Radiotherapy-induced hypopituitarism
+addisons disease,SNOMED CT,16685009,Hypocortisolism secondary to another disorder
+addisons disease,SNOMED CT,24867002,Severe adrenal insufficiency
+addisons disease,SNOMED CT,32390006,Panhypopituitarism
+addisons disease,SNOMED CT,34253008,Myopathy in Addison\'s disease
+addisons disease,SNOMED CT,36102002,Acute adrenal insufficiency with meningococcal septicemia
+addisons disease,SNOMED CT,37495007,Familial adrenocortical hypoplasia
+addisons disease,SNOMED CT,45414006,Glucocorticoid deficiency with achalasia
+addisons disease,SNOMED CT,65389002,Adrenoleukodystrophy
+addisons disease,SNOMED CT,67749007,Total excision of pituitary gland by transfrontal approach
+addisons disease,SNOMED CT,71974009,Hereditary adrenal unresponsiveness to corticotropin
+addisons disease,SNOMED CT,76715008,Addison\'s disease due to autoimmunity
+addisons disease,SNOMED CT,80599001,Isolated corticotropin deficiency
+addisons disease,SNOMED CT,83646004,Destructive procedure on pituitary gland
+addisons disease,SNOMED CT,90182005,Hypophysectomy-induced hypopituitarism
+addisons disease,SNOMED CT,93235007,Congenital hypoplasia of adrenal gland
+addisons disease,SNOMED CT,123760002,Prepuberal panhypopituitarism
+addisons disease,SNOMED CT,171951009,Cryotherapy to pituitary gland
+addisons disease,SNOMED CT,186270000,Tuberculous Addison\'s disease
+addisons disease,SNOMED CT,190470005,Idiopathic panhypopituitarism
+addisons disease,SNOMED CT,190471009,Post-birth injury panhypopituitarism
+addisons disease,SNOMED CT,190472002,Post-infarction panhypopituitarism
+addisons disease,SNOMED CT,237481007,Injection of neurolytic substance into pituitary gland
+addisons disease,SNOMED CT,237482000,Radiofrequency destruction of pituitary gland
+addisons disease,SNOMED CT,237682009,Panhypopituitarism - anterior and posterior
+addisons disease,SNOMED CT,237683004,Panhypopituitarism - X-linked
+addisons disease,SNOMED CT,237692001,Adrenocorticotropic hormone deficiency
+addisons disease,SNOMED CT,237693006,Idiopathic adrenocorticotropic hormone deficiency
+addisons disease,SNOMED CT,237694000,Steroid suppression of adrenocorticotropic hormone secretion
+addisons disease,SNOMED CT,237760008,Addison\'s disease with adrenoleucodystrophy
+addisons disease,SNOMED CT,237761007,Adrenal insufficiency due to adrenal metastasis
+addisons disease,SNOMED CT,237762000,Post-adrenalectomy adrenal insufficiency
+addisons disease,SNOMED CT,237764004,"Congenital adrenal hypoplasia, X-linked"
+addisons disease,SNOMED CT,237785004,Hypoadrenalism
+addisons disease,SNOMED CT,238061001,Neonatal adrenoleucodystrophy
+addisons disease,SNOMED CT,238069004,Acyl-coenzyme A oxidase deficiency
+addisons disease,SNOMED CT,302337005,Injection of destructive substance into pituitary gland
+addisons disease,SNOMED CT,307983002,Removal of normal pituitary gland
+addisons disease,SNOMED CT,359713003,Total hypophysectomy
+addisons disease,SNOMED CT,363732003,Addison\'s disease
+addisons disease,SNOMED CT,373662000,Primary adrenocortical insufficiency
+addisons disease,SNOMED CT,386584007,Adrenal cortical hypofunction
+addisons disease,SNOMED CT,702949005,Proopiomelanocortin deficiency syndrome
+addisons disease,SNOMED CT,721288009,Hypopituitarism following procedure
+addisons disease,SNOMED CT,721290005,Adrenocortical hypofunction following procedure
+addisons disease,SNOMED CT,724275005,Primary immunodeficiency with natural killer cell deficiency and adrenal insufficiency
+addisons disease,SNOMED CT,763311001,Adrenomyodystrophy
+addisons disease,SNOMED CT,764960005,Inherited isolated adrenal insufficiency due to partial cytochrome P450 family 11 subfamily A member 1 deficiency
+addisons disease,SNOMED CT,765326001,Familial glucocorticoid deficiency
+addisons disease,SNOMED CT,771308008,"Non-acquired combined pituitary hormone deficiency, sensorineural hearing loss, spine abnormalities syndrome"
+addisons disease,SNOMED CT,773989002,Late-onset isolated adrenocorticotropic hormone deficiency
+addisons disease,SNOMED CT,782917007,Familial adrenal hypoplasia with absent pituitary luteinizing hormone
+addisons disease,SNOMED CT,783092005,"46,XY disorder of sex development, adrenal insufficiency due to cytochrome P450 family 11 subfamily A member 1 deficiency"
+addisons disease,SNOMED CT,366951000119109,Adolescent X-linked adrenoleukodystrophy
+addisons disease,SNOMED CT,367041000119108,Childhood cerebral X-linked adrenoleukodystrophy
+graves disease,ICD10,E05,Thyrotoxicosis [hyperthyroidism]
+graves disease,SNOMED CT,479003,Graves\' disease with pretibial myxedema AND with thyrotoxic crisis
+graves disease,SNOMED CT,15470004,Toxic diffuse goiter with acropachy
+graves disease,SNOMED CT,26151008,Graves\' disease with acropachy AND with thyrotoxic crisis
+graves disease,SNOMED CT,38591003,Toxic diffuse goiter
+graves disease,SNOMED CT,55807009,Toxic diffuse goiter with exophthalmos
+graves disease,SNOMED CT,60216004,Toxic diffuse goiter with thyrotoxic crisis
+graves disease,SNOMED CT,60268006,Toxic diffuse goiter with pretibial myxedema
+graves disease,SNOMED CT,66628005,Toxic diffuse goiter with exophthalmos AND with thyrotoxic storm
+graves disease,SNOMED CT,78146007,Pretibial myxedema
+graves disease,SNOMED CT,154656003,Toxic diffuse goitre
+graves disease,SNOMED CT,190240002,Toxic diffuse goitre (& [Basedow\'s disease] or [Graves\' disease])
+graves disease,SNOMED CT,190241003,Toxic diffuse goiter with no crisis
+graves disease,SNOMED CT,190242005,Toxic diffuse goiter with crisis
+graves disease,SNOMED CT,190243000,Toxic diffuse goiter NOS
+graves disease,SNOMED CT,237499004,Thyrotoxicosis due to Graves\' disease
+graves disease,SNOMED CT,237823003,Graves\' disease
+graves disease,SNOMED CT,237824009,Juvenile Graves\' disease
+graves disease,SNOMED CT,237825005,Thyroid-associated dermopathy
+graves disease,SNOMED CT,237826006,Thyroid acropachy
+graves disease,SNOMED CT,267374005,Toxic diffuse goiter
+graves disease,SNOMED CT,353295004,Graves\' disease
+graves disease,SNOMED CT,367449005,Toxic diffuse goiter
+graves disease,SNOMED CT,402465005,Circumscribed nodular and tuberous pretibial myxedema
+graves disease,SNOMED CT,402466006,Diffuse pretibial myxedema
+graves disease,SNOMED CT,402467002,Elephantiasic pretibial myxedema
+graves disease,SNOMED CT,410725005,Graves eye disease
+graves disease,SNOMED CT,103681000119108,Restrictive strabismus due to Graves disease
+graves disease,SNOMED CT,104461000119104,Ophthalmoplegia due to Graves disease
+graves disease,SNOMED CT,137421000119106,Graves\' disease in remission
+graves disease,SNOMED CT,603651000000109,Toxic diffuse goiter NOS
+hashimotos thyroiditis,ICD10,E063,Autoimmune thyroiditis
+hashimotos thyroiditis,SNOMED CT,21983002,Hashimoto thyroiditis
+hashimotos thyroiditis,SNOMED CT,27538003,Hyperthyroidism with Hashimoto disease
+hashimotos thyroiditis,SNOMED CT,84362007,Fibrous autoimmune thyroiditis
+hashimotos thyroiditis,SNOMED CT,154667002,Chronic thyroiditis (& [Hashimoto\'s disease])
+hashimotos thyroiditis,SNOMED CT,190297000,Thyroiditis: [chronic lymphocytic] or [autoimmune] or [Hashimoto\'s]
+hashimotos thyroiditis,SNOMED CT,237500008,Hashitoxicosis - transient
+hashimotos thyroiditis,SNOMED CT,237520009,Hypothyroidism due to Hashimoto\'s thyroiditis
+hashimotos thyroiditis,SNOMED CT,237534009,Hashimoto\'s thyroiditis
+hashimotos thyroiditis,SNOMED CT,267466008,Chronic thyroiditis (& [Hashimoto\'s disease])
+hashimotos thyroiditis,SNOMED CT,361125005,Subacute autoimmune thyroiditis
+hashimotos thyroiditis,SNOMED CT,771271000,Steroid-responsive encephalopathy associated with autoimmune thyroiditis
+anca vasculitis,ICD10,M301,Polyarteritis with lung involvement [Churg-Strauss]
+anca vasculitis,ICD10,M313,Wegener granulomatosis
+anca vasculitis,ICD10,M317,Microscopic polyangiitis
+anca vasculitis,SNOMED CT,23782005,Wegener\'s granulomatosis
+anca vasculitis,SNOMED CT,46956008,Systemic vasculitis
+anca vasculitis,SNOMED CT,60555002,Hypersensitivity angiitis
+anca vasculitis,SNOMED CT,82275008,Allergic granulomatosis angiitis
+anca vasculitis,SNOMED CT,195353004,Granulomatosis with polyangiitis
+anca vasculitis,SNOMED CT,195362002,Churg-Strauss vasculitis
+anca vasculitis,SNOMED CT,232369001,Granulomatosis with polyangiitis of nose
+anca vasculitis,SNOMED CT,232460001,Granulomatosis with polyangiitis of larynx
+anca vasculitis,SNOMED CT,234019004,Secondary systemic vasculitis
+anca vasculitis,SNOMED CT,235000001,Granulomatosis with polyangiitis of gingiva
+anca vasculitis,SNOMED CT,239924002,Primary necrotizing systemic vasculitis
+anca vasculitis,SNOMED CT,239928004,Microscopic polyarteritis nodosa
+anca vasculitis,SNOMED CT,239929007,Microscopic polyarteritis nodosa with single organ involvement
+anca vasculitis,SNOMED CT,239930002,Microscopic polyarteritis nodosa with multi-organ involvement
+anca vasculitis,SNOMED CT,239931003,Polyangiitis overlap syndrome
+anca vasculitis,SNOMED CT,239933000,Primary necrotizing vasculitis with granulomata
+anca vasculitis,SNOMED CT,239934006,Wegener\'s syndrome
+anca vasculitis,SNOMED CT,239935007,Limited granulomatosis with polyangiitis
+anca vasculitis,SNOMED CT,239936008,Granulomatosis with polyangiitis with multisystem involvement
+anca vasculitis,SNOMED CT,274601001,[EDTA] Wegener\'s granulomatosis associated with renal failure
+anca vasculitis,SNOMED CT,390001000,Wegener\'s granulomatosis
+anca vasculitis,SNOMED CT,416879000,Scleritis due to granulomatosis with polyangiitis
+anca vasculitis,SNOMED CT,427555000,Glomerulonephritis due to granulomatosis with polyangiitis
+anca vasculitis,SNOMED CT,722191003,Antineutrophil cytoplasmic antibody positive vasculitis
+anca vasculitis,SNOMED CT,724502006,Respiratory disorder co-occurrent and due to microscopic polyangiitis
+anca vasculitis,SNOMED CT,737184001,Interstitial lung disease co-occurrent and due to systemic vasculitis
+anca vasculitis,SNOMED CT,866047004,Multiple mononeuropathy due to perinuclear antineutrophil cytoplasmic associated antibody associated vasculitis
+anca vasculitis,SNOMED CT,90971000119103,Glomerulonephritis co-occurrent and due to vasculitis
+anca vasculitis,SNOMED CT,101711000119105,Glomerulonephritis co-occurrent and due to antineutrophil cytoplasmic antibody positive vasculitis
+anca vasculitis,SNOMED CT,317931000119101,Pulmonary disease due to allergic granulomatosis angiitis
+anca vasculitis,SNOMED CT,419611000000107,Wegener\'s granulomatosis associated with renal failure - European Dialysis and Transplant Association
+anca vasculitis,SNOMED CT,829821000000102,Microscopic polyangiitis
+anca vasculitis,SNOMED CT,831791000000109,Microscopic polyangiitis
+anca vasculitis,SNOMED CT,985951000000102,Small vessel vasculitis
+giant cell arteritis,ICD10,M315,Giant cell arteritis with polymyalgia rheumatica
+giant cell arteritis,ICD10,M316,Other giant cell arteritis
+giant cell arteritis,SNOMED CT,87511001,Giant cell arteritis
+giant cell arteritis,SNOMED CT,155442004,Giant cell arteritis
+giant cell arteritis,SNOMED CT,195354005,Giant cell arteritis
+giant cell arteritis,SNOMED CT,195355006,Giant cell arteritis
+giant cell arteritis,SNOMED CT,195356007,Giant cell arteritis
+giant cell arteritis,SNOMED CT,195357003,Giant cell arteritis NOS
+giant cell arteritis,SNOMED CT,202835005,Giant cell arteritis with polymyalgia rheumatica
+giant cell arteritis,SNOMED CT,203782001,[X]Other giant cell arteritis
+giant cell arteritis,SNOMED CT,230732009,Cerebral arteritis in giant cell arteritis
+giant cell arteritis,SNOMED CT,239938009,Giant cell arteritis with polymyalgia rheumatica
+giant cell arteritis,SNOMED CT,239939001,Giant cell arteritis without polymyalgia rheumatica
+giant cell arteritis,SNOMED CT,400130008,Temporal arteritis
+giant cell arteritis,SNOMED CT,414341000,Giant cell arteritis
+giant cell arteritis,SNOMED CT,838363001,Arteritic anterior ischemic optic neuropathy due to giant cell arteritis
+giant cell arteritis,SNOMED CT,478741000000101,[X]Other giant cell arteritis
+giant cell arteritis,SNOMED CT,642981000000107,Giant cell arteritis NOS
+iga vasculitis,ICD10,D690,Allergic purpura
+iga vasculitis,SNOMED CT,191306005,Immunoglobulin A vasculitis
+iga vasculitis,SNOMED CT,191307001,Henoch-Schonlein nephritis
+iga vasculitis,SNOMED CT,246074004,Henoch-Sch?nlein purpura
+iga vasculitis,SNOMED CT,274592007,[EDTA] Henoch-Schonlein purpura associated with renal failure
+iga vasculitis,SNOMED CT,870349001,Noninfectious enteritis due to immunoglobulin A vasculitis
+iga vasculitis,SNOMED CT,871631000,Ulcer of intestine due to immunoglobulin A vasculitis
+iga vasculitis,SNOMED CT,1010623000,Disorder of lung due to immunoglobulin A vasculitis
+iga vasculitis,SNOMED CT,480571000000106,Henoch-Schonlein purpura associated with renal failure - European Dialysis and Transplant Association
+polymyalgia rheumatica,ICD 10,M315,Giant cell arteritis with polymyalgia rheumatica
+polymyalgia rheumatica,ICD 10,M353,Polymyalgia rheumatica
+polymyalgia rheumatica,SNOMED CT,65323003,Polymyalgia rheumatica
+polymyalgia rheumatica,SNOMED CT,156656001,Polymyalgia rheumatica
+polymyalgia rheumatica,SNOMED CT,202834009,Polymyalgia (& [rheumatica])
+polymyalgia rheumatica,SNOMED CT,202835005,Giant cell arteritis with polymyalgia rheumatica
+polymyalgia rheumatica,SNOMED CT,267988003,Polymyalgia rheumatica
+immune thrombocytopenia,ICD10,D693,Idiopathic thrombocytopenic purpura
+immune thrombocytopenia,SNOMED CT,13172003,Chronic idiopathic thrombocytopenic purpura
+immune thrombocytopenia,SNOMED CT,19307009,Drug-induced immune thrombocytopenia
+immune thrombocytopenia,SNOMED CT,28505005,Acute idiopathic thrombocytopenic purpura
+immune thrombocytopenia,SNOMED CT,31912009,Autoimmune purpura
+immune thrombocytopenia,SNOMED CT,32273002,Immune thrombocytopenic purpura
+immune thrombocytopenia,SNOMED CT,75331009,Evans syndrome
+immune thrombocytopenia,SNOMED CT,128092005,Secondary autoimmune thrombocytopenia
+immune thrombocytopenia,SNOMED CT,142969008,Thrombocytopenia (& [auto-immune])
+immune thrombocytopenia,SNOMED CT,154825008,Thrombocytopenic purpura: [primary] or [idiopathic]
+immune thrombocytopenia,SNOMED CT,191315003,(Thrombocytopenia: [primary] or [idopathic purpuric] or [idiopathic] or [purpuric]) or (Evan\'s syndrome)
+immune thrombocytopenia,SNOMED CT,191316002,Idiopathic purpura (& thrombocytopenic)
+immune thrombocytopenia,SNOMED CT,234490009,Immune thrombocytopenic purpura
+immune thrombocytopenia,SNOMED CT,267567001,Thrombocytopenic purpura: [primary] or [idiopathic]
+immune thrombocytopenia,SNOMED CT,275758003,Autoimmune thrombocytopenia
+immune thrombocytopenia,SNOMED CT,367437009,Autoimmune purpura
+immune thrombocytopenia,SNOMED CT,1365731000000103,Vaccine-induced prothrombotic immune thrombocytopenia
+pernicious anaemia,ICD10,D510,Vitamin B 12  deficiency anaemia due to intrinsic factor deficiency
+pernicious anaemia,SNOMED CT,84027009,Pernicious anemia
+pernicious anaemia,SNOMED CT,154789008,Pernicious anaemia
+pernicious anaemia,SNOMED CT,193213003,Myasthenic syndrome due to pernicious anemia
+aplastic anaemia,ICD10,D60,Acquired pure red cell aplasia [erythroblastopenia]
+aplastic anaemia,ICD10,D600,Chronic acquired pure red cell aplasia
+aplastic anaemia,ICD10,D601,Transient acquired pure red cell aplasia
+aplastic anaemia,ICD10,D608,Other acquired pure red cell aplasias
+aplastic anaemia,ICD10,D609,"Acquired pure red cell aplasia, unspecified"
+aplastic anaemia,ICD10,D61,Other aplastic anaemias
+aplastic anaemia,ICD10,D610,Constitutional aplastic anaemia
+aplastic anaemia,ICD10,D612,Aplastic anaemia due to other external agents
+aplastic anaemia,ICD10,D613,Idiopathic aplastic anaemia
+aplastic anaemia,ICD10,D618,Other specified aplastic anaemias
+aplastic anaemia,ICD10,D619,"Aplastic anaemia, unspecified"
+aplastic anaemia,SNOMED CT,2966007,Aplastic anemia secondary to radiation (disorder)
+aplastic anaemia,SNOMED CT,9043005,Aplastic anemia secondary to drugs (disorder)
+aplastic anaemia,SNOMED CT,14024008,Humoral immunologic aplastic anemia (disorder)
+aplastic anaemia,SNOMED CT,28975000,Constitutional aplastic anemia (disorder)
+aplastic anaemia,SNOMED CT,30575002,Fanconi's anemia (disorder)
+aplastic anaemia,SNOMED CT,31779001,Aplastic anemia secondary to pancreatitis (disorder)
+aplastic anaemia,SNOMED CT,43858000,Secondary aplastic anemia (disorder)
+aplastic anaemia,SNOMED CT,46760003,Estren-Dameshek anemia (disorder)
+aplastic anaemia,SNOMED CT,47226002,Aplastic anemia secondary to pregnancy (disorder)
+aplastic anaemia,SNOMED CT,49155007,Aplastic anemia secondary to chemicals (disorder)
+aplastic anaemia,SNOMED CT,50220002,Cellular immunologic aplastic anemia (disorder)
+aplastic anaemia,SNOMED CT,55907008,Acquired aplastic anemia (disorder)
+aplastic anaemia,SNOMED CT,67105003,Aplastic anemia secondary to chronic systemic disease (disorder)
+aplastic anaemia,SNOMED CT,69336006,Aplastic anemia secondary to metabolic alteration (disorder)
+aplastic anaemia,SNOMED CT,77084001,Immunologic aplastic anemia (disorder)
+aplastic anaemia,SNOMED CT,83153007,Aplastic anemia secondary to infection (disorder)
+aplastic anaemia,SNOMED CT,83659007,AIDS with aplastic anemia (disorder)
+aplastic anaemia,SNOMED CT,90414007,Chronic acquired pure red cell aplasia (disorder)
+aplastic anaemia,SNOMED CT,191244003,Aplastic anemia due to chronic disease (disorder)
+aplastic anaemia,SNOMED CT,191246001,Aplastic anemia due to infection (disorder)
+aplastic anaemia,SNOMED CT,191247005,Aplastic anemia caused by radiation (disorder)
+aplastic anaemia,SNOMED CT,191248000,Aplastic anemia caused by toxic cause (disorder)
+aplastic anaemia,SNOMED CT,191251007,Transient hypoplastic anemia (disorder)
+aplastic anaemia,SNOMED CT,191255003,Transient acquired pure red cell aplasia (disorder)
+aplastic anaemia,SNOMED CT,191256002,Idiopathic aplastic anemia (disorder)
+aplastic anaemia,SNOMED CT,191431005,"[X]Acquired pure red cell aplasia, unspecified (disorder)"
+aplastic anaemia,SNOMED CT,234343008,Normocytic anemia due to aplasia (disorder)
+aplastic anaemia,SNOMED CT,234367000,Pancytopenia with pancreatitis (disorder)
+aplastic anaemia,SNOMED CT,234370001,"Pure red cell aplasia, acquired (disorder)"
+aplastic anaemia,SNOMED CT,234373004,Constitutional red cell hypoplasia (disorder)
+aplastic anaemia,SNOMED CT,234376007,Acquired red cell aplasia (disorder)
+aplastic anaemia,SNOMED CT,236466005,Congenital Fanconi syndrome (disorder)
+aplastic anaemia,SNOMED CT,236467001,Acquired Fanconi syndrome (disorder)
+aplastic anaemia,SNOMED CT,236468006,Adult Fanconi syndrome (disorder)
+aplastic anaemia,SNOMED CT,240486003,Parvoviral aplastic crisis (disorder)
+aplastic anaemia,SNOMED CT,267524009,Constitutional aplastic anemia with malformation (disorder)
+aplastic anaemia,SNOMED CT,267525005,Constitutional red cell aplasia and hypoplasia (disorder)
+aplastic anaemia,SNOMED CT,267527002,Aplastic anemia due to drugs (disorder)
+aplastic anaemia,SNOMED CT,275523003,Pancytopenia-dysmelia (disorder)
+aplastic anaemia,SNOMED CT,306058006,Aplastic anemia (disorder)
+aplastic anaemia,SNOMED CT,413564005,Aplastic anemia associated with infection (disorder)
+aplastic anaemia,SNOMED CT,413565006,Aplastic anemia associated with metabolic alteration (disorder)
+aplastic anaemia,SNOMED CT,413566007,Aplastic anemia associated with pancreatitis (disorder)
+aplastic anaemia,SNOMED CT,413567003,Aplastic anemia associated with pregnancy (disorder)
+aplastic anaemia,SNOMED CT,421102007,Aplastic anemia associated with acquired immunodeficiency syndrome (disorder)
+aplastic anaemia,SNOMED CT,713910008,Antibody mediated acquired pure red cell aplasia caused by erythropoiesis stimulating agent (disorder)
+aplastic anaemia,SNOMED CT,719019000,WT limb blood syndrome (disorder)
+aplastic anaemia,SNOMED CT,723512008,Revesz syndrome (disorder)
+aplastic anaemia,SNOMED CT,765748009,Adult pure red cell aplasia (disorder)
+aplastic anaemia,SNOMED CT,118791000119106,Aplastic anemia caused by antineoplastic agent (disorder)
+aplastic anaemia,SNOMED CT,414481000000103,"[X]Acquired pure red cell aplasia, unspecified"
+aplastic anaemia,SNOMED CT,419251000000109,"[X]Acquired pure red cell aplasia, unspecified (disorder)"
+aplastic anaemia,SNOMED CT,450011000000103,[X]Other specified aplastic anaemias (disorder)
+aplastic anaemia,SNOMED CT,467391000000104,[X]Other acquired pure red cell aplasias (disorder)
+aplastic anaemia,SNOMED CT,531991000000108,Constitutional aplastic anemia without mention of malformation (disorder)
+aplastic anaemia,SNOMED CT,606981000000103,Other specified constitutional aplastic anemia (disorder)
+aplastic anaemia,SNOMED CT,610681000000109,Constitutional aplastic anemia NOS (disorder)
+aplastic anaemia,SNOMED CT,643151000000105,Acquired aplastic anemia NOS (disorder)
+aplastic anaemia,SNOMED CT,834891000000103,Acquired Fanconi syndrome
+aplastic anaemia,SNOMED CT,857431000000107,Adult Fanconi syndrome
+aplastic anaemia,SNOMED CT,933371000000101,Erythropoiesis stimulating agent induced antibody mediated acquired pure red cell aplasia (disorder)
+aplastic anaemia,SNOMED CT,938141000000102,Congenital Fanconi syndrome
+autoimmune haemolytic anaemia,ICD10,D590,Drug-induced autoimmune haemolytic anaemia
+autoimmune haemolytic anaemia,ICD10,D591,Other autoimmune haemolytic anaemias
+autoimmune haemolytic anaemia,SNOMED CT,1468004,Cold autoimmune hemolytic anemia
+autoimmune haemolytic anaemia,SNOMED CT,3978000,Warm autoimmune hemolytic anemia
+autoimmune haemolytic anaemia,SNOMED CT,5603006,Autoimmune hemolytic anemia caused by immunoglobulin G
+autoimmune haemolytic anaemia,SNOMED CT,6398009,Idiopathic chronic cold agglutinin disease
+autoimmune haemolytic anaemia,SNOMED CT,11781007,Autoimmune hemolytic anemia caused by complement
+autoimmune haemolytic anaemia,SNOMED CT,18323000,"Drug-induced immune hemolytic anemia, immune complex type"
+autoimmune haemolytic anaemia,SNOMED CT,22098000,Chronic idiopathic autoimmune hemolytic anemia
+autoimmune haemolytic anaemia,SNOMED CT,25121006,Autoimmune hemolytic anemia
+autoimmune haemolytic anaemia,SNOMED CT,33491002,Autoimmune hemolytic anemia caused by immunoglobulin A plus complement
+autoimmune haemolytic anaemia,SNOMED CT,35703006,Post-viral paroxysmal cold hemoglobinuria
+autoimmune haemolytic anaemia,SNOMED CT,38731003,"Drug-induced immune hemolytic anemia, autoantibody type"
+autoimmune haemolytic anaemia,SNOMED CT,44206008,Hapten type low affinity hemolytic anemia
+autoimmune haemolytic anaemia,SNOMED CT,50253007,Secondary paroxysmal cold hemoglobinuria
+autoimmune haemolytic anaemia,SNOMED CT,62609001,Autoimmune hemolytic anemia caused by immunoglobulin G plus complement
+autoimmune haemolytic anaemia,SNOMED CT,62871001,Idiopathic paroxysmal cold hemoglobinuria
+autoimmune haemolytic anaemia,SNOMED CT,71832003,Autoimmune hemolytic anemia caused by immunoglobulin M
+autoimmune haemolytic anaemia,SNOMED CT,74789008,Coombs positive hemolytic anemia
+autoimmune haemolytic anaemia,SNOMED CT,75331009,Evans syndrome
+autoimmune haemolytic anaemia,SNOMED CT,86225009,Hapten type high affinity hemolytic anemia
+autoimmune haemolytic anaemia,SNOMED CT,91411007,Autoimmune hemolytic anemia caused by immunoglobulin A
+autoimmune haemolytic anaemia,SNOMED CT,127049002,Primary (idiopathic) autoimmune hemolytic anemia
+autoimmune haemolytic anaemia,SNOMED CT,127050002,Secondary autoimmune hemolytic anemia
+autoimmune haemolytic anaemia,SNOMED CT,127051003,Primary (idiopathic) warm autoimmune hemolytic anemia
+autoimmune haemolytic anaemia,SNOMED CT,127052005,Secondary warm autoimmune hemolytic anemia
+autoimmune haemolytic anaemia,SNOMED CT,127053000,Post-infectious cold agglutinin disease
+autoimmune haemolytic anaemia,SNOMED CT,127054006,Cold agglutinin disease caused by Epstein-Barr virus infection
+autoimmune haemolytic anaemia,SNOMED CT,127055007,Chronic cold agglutinin disease
+autoimmune haemolytic anaemia,SNOMED CT,127056008,Chronic cold agglutinin disease associated with B-cell neoplasm
+autoimmune haemolytic anaemia,SNOMED CT,127057004,Paroxysmal cold hemoglobinuria
+autoimmune haemolytic anaemia,SNOMED CT,127059001,Drug-induced immune hemolytic anemia
+autoimmune haemolytic anaemia,SNOMED CT,127060006,"Drug-induced immune hemolytic anemia, hapten type"
+autoimmune haemolytic anaemia,SNOMED CT,127061005,"Autoimmune hemolytic anemia, categorized by antibody class AND/OR complement"
+autoimmune haemolytic anaemia,SNOMED CT,154803002,Autoimmune haemolytic anaemia
+autoimmune haemolytic anaemia,SNOMED CT,191209000,(Autoimmune haemolytic anaemias) or (Coombs positive haemolysis)
+autoimmune haemolytic anaemia,SNOMED CT,191210005,Primary cold-type hemolytic anemia
+autoimmune haemolytic anaemia,SNOMED CT,191211009,Primary warm-type hemolytic anemia
+autoimmune haemolytic anaemia,SNOMED CT,191212002,Secondary cold-type hemolytic anemia
+autoimmune haemolytic anaemia,SNOMED CT,191213007,Secondary warm-type hemolytic anemia
+autoimmune haemolytic anaemia,SNOMED CT,191214001,Drug-induced autoimmune haemolytic anaemia
+autoimmune haemolytic anaemia,SNOMED CT,191215000,Autoimmune hemolytic anemia NOS
+autoimmune haemolytic anaemia,SNOMED CT,191224009,Cold Donath Landsteiner type autoimmune haemolytic anaemia
+autoimmune haemolytic anaemia,SNOMED CT,191422005,[X]Other autoimmune hemolytic anemias
+autoimmune haemolytic anaemia,SNOMED CT,234381003,Maternal autoimmune hemolytic anemia
+autoimmune haemolytic anaemia,SNOMED CT,309742004,Drug-induced autoimmune hemolytic anemia
+autoimmune haemolytic anaemia,SNOMED CT,398937006,Cold autoimmune hemolytic anemia
+autoimmune haemolytic anaemia,SNOMED CT,413603009,Autoimmune hemolytic anemia
+autoimmune haemolytic anaemia,SNOMED CT,718716008,Autoimmune hemolytic anemia mixed type
+autoimmune haemolytic anaemia,SNOMED CT,732960002,Secondary autoimmune hemolytic anemia co-occurrent and due to systemic lupus erythematosus
+autoimmune haemolytic anaemia,SNOMED CT,732962005,Secondary autoimmune hemolytic anemia co-occurrent and due to chronic inflammatory disease
+autoimmune haemolytic anaemia,SNOMED CT,732963000,Secondary autoimmune hemolytic anemia co-occurrent and due to lymphoproliferative disorder
+autoimmune haemolytic anaemia,SNOMED CT,732965007,Secondary autoimmune hemolytic anemia co-occurrent and due to rheumatic disorder
+autoimmune haemolytic anaemia,SNOMED CT,732966008,Secondary autoimmune hemolytic anemia co-occurrent and due to ulcerative colitis
+autoimmune haemolytic anaemia,SNOMED CT,411441000000109,[X]Other autoimmune haemolytic anaemias
+autoimmune haemolytic anaemia,SNOMED CT,597881000000101,Autoimmune hemolytic anemia NOS
+guillain barre syndrome,ICD10,G610,Guillain-Barre syndrome
+guillain barre syndrome,SNOMED CT,40956001,Guillain-Barre syndrome (disorder)
+guillain barre syndrome,SNOMED CT,715770009,Acute motor axonal neuropathy (disorder)
+guillain barre syndrome,SNOMED CT,716722005,Acute motor sensory axonal Guillain-Barre syndrome (disorder)
+guillain barre syndrome,SNOMED CT,716723000,Guillain-Barre syndrome acute inflammatory demyelinating polyradiculoneuropathic form (disorder)
+guillain barre syndrome,SNOMED CT,766049000,Acute sensory ataxic neuropathy (disorder)
+guillain barre syndrome,SNOMED CT,766722008,Paraparetic variant of Guillain-Barre syndrome (disorder)
+guillain barre syndrome,SNOMED CT,783010003,Pharyngeal-cervical-brachial variant of Guillain-Barre syndrome (disorder)
+guillain barre syndrome,SNOMED CT,783244002,Acute pure sensory neuropathy (disorder)
+guillain barre syndrome,SNOMED CT,1172701002,Facial diplegia with paresthesia (disorder)
+guillain barre syndrome,SNOMED CT,1231204003,Ophthalmoplegia due to and following Guillain-Barre syndrome (disorder)
+guillain barre syndrome,SNOMED CT,128731000119101,History of Guillain Barre syndrome (situation)
+guillain barre syndrome,SNOMED CT,16064651000119108,Disorder due to and following Guillain Barre syndrome (disorder)
+multiple sclerosis,ICD10,G35,Multiple sclerosis
+multiple sclerosis,SNOMED CT,24700007,Multiple sclerosis (disorder)
+multiple sclerosis,SNOMED CT,192926004,Multiple sclerosis of the brainstem (disorder)
+multiple sclerosis,SNOMED CT,192927008,Multiple sclerosis of the spinal cord (disorder)
+multiple sclerosis,SNOMED CT,192929006,Exacerbation of multiple sclerosis (disorder)
+multiple sclerosis,SNOMED CT,230372003,Acute relapsing multiple sclerosis (disorder)
+multiple sclerosis,SNOMED CT,425500002,Secondary progressive multiple sclerosis (disorder)
+multiple sclerosis,SNOMED CT,426373005,Relapsing remitting multiple sclerosis (disorder)
+multiple sclerosis,SNOMED CT,428700003,Primary progressive multiple sclerosis (disorder)
+multiple sclerosis,SNOMED CT,438511000,Benign multiple sclerosis (disorder)
+multiple sclerosis,SNOMED CT,439567002,Malignant multiple sclerosis (disorder)
+multiple sclerosis,SNOMED CT,701839009,Multiple sclerosis data web-based application software (physical object)
+multiple sclerosis,SNOMED CT,702885009,Multiple sclerosis clinic (environment)
+multiple sclerosis,SNOMED CT,724778008,Progressive relapsing multiple sclerosis (disorder)
+multiple sclerosis,SNOMED CT,733028000,"Multiple sclerosis, ichthyosis, factor VIII deficiency syndrome (disorder)"
+multiple sclerosis,SNOMED CT,766246000,Marburg acute multiple sclerosis (disorder)
+multiple sclerosis,SNOMED CT,816984002,Progressive multiple sclerosis (disorder)
+multiple sclerosis,SNOMED CT,1186728004,Pediatric multiple sclerosis (disorder)
+multiple sclerosis,SNOMED CT,1231232007,Intermediate uveitis associated with multiple sclerosis (disorder)
+multiple sclerosis,SNOMED CT,1259083006,Disorder of autonomic nervous system due to multiple sclerosis (disorder)
+multiple sclerosis,SNOMED CT,198491000000106,Multiple sclerosis review (regime/therapy)
+multiple sclerosis,SNOMED CT,205631000000104,Multiple sclerosis multidisciplinary review (regime/therapy)
+multiple sclerosis,SNOMED CT,515931000000104,Multiple sclerosis review declined (situation)
+multiple sclerosis,SNOMED CT,758981000000100,Multiple sclerosis monitoring administration (record artifact)
+multiple sclerosis,SNOMED CT,759021000000107,Multiple sclerosis monitoring invitation (procedure)
+multiple sclerosis,SNOMED CT,759051000000102,Multiple sclerosis monitoring first letter (procedure)
+multiple sclerosis,SNOMED CT,759091000000105,Multiple sclerosis monitoring second letter (procedure)
+multiple sclerosis,SNOMED CT,759131000000108,Multiple sclerosis monitoring telephone invitation (procedure)
+multiple sclerosis,SNOMED CT,759171000000105,Multiple sclerosis monitoring third letter (procedure)
+multiple sclerosis,SNOMED CT,811881000000109,Multiple sclerosis care plan agreed (finding)
+multiple sclerosis,SNOMED CT,903741000000102,Uhthoff phenomenon (disorder)
+myasthenia gravis,ICD10,G700,Myasthenia gravis
+myasthenia gravis,SNOMED CT,31839002,"Myasthenia gravis, adult form"
+myasthenia gravis,SNOMED CT,55051001,"Myasthenia gravis, juvenile form"
+myasthenia gravis,SNOMED CT,80976008,Myasthenic crisis
+myasthenia gravis,SNOMED CT,91637004,Myasthenia gravis
+myasthenia gravis,SNOMED CT,155092009,Myasthenia gravis
+myasthenia gravis,SNOMED CT,193207007,Juvenile or adult myasthenia gravis
+myasthenia gravis,SNOMED CT,193208002,Myasthenia gravis NOS
+myasthenia gravis,SNOMED CT,230684008,Ocular myasthenia
+myasthenia gravis,SNOMED CT,230685009,Myasthenia gravis associated with thymoma
+myasthenia gravis,SNOMED CT,230686005,Generalized myasthenia
+myasthenia gravis,SNOMED CT,230687001,Myopathy in myasthenia gravis
+myasthenia gravis,SNOMED CT,414927004,Ocular myasthenia with strabismus
+myasthenia gravis,SNOMED CT,770596007,Rippling muscle disease with myasthenia gravis
+myasthenia gravis,SNOMED CT,77461000119109,Myasthenia gravis with exacerbation
+myasthenia gravis,SNOMED CT,77471000119103,Myasthenia gravis without exacerbation
+myasthenia gravis,SNOMED CT,639711000000109,Myasthenia gravis NOS
+longitudinal myelitis,ICD10,G360,Neuromyelitis optica [Devic]
+longitudinal myelitis,ICD10,G373,Acute transverse myelitis in demyelinating disease of central nervous system
+longitudinal myelitis,SNOMED CT,16631009,Transverse myelopathy syndrome
+longitudinal myelitis,SNOMED CT,17674000,Neuromyelitis
+longitudinal myelitis,SNOMED CT,25044007,Neuromyelitis optica
+longitudinal myelitis,SNOMED CT,47000000,Acute transverse myelitis
+longitudinal myelitis,SNOMED CT,230378004,Acute non-infective transverse myelitis
+longitudinal myelitis,SNOMED CT,425756000,Idiopathic transverse myelitis
+clinically isolated syndrome,ICD10,G368,Other specified acute disseminated demyelination
+clinically isolated syndrome,ICD10,G369,"Acute disseminated demyelination, unspecified"
+clinically isolated syndrome,ICD10,G378,Other specified demyelinating diseases of central nervous system
+clinically isolated syndrome,ICD10,G379,"Demyelinating disease of central nervous system, unspecified"
+clinically isolated syndrome,SNOMED CT,445967004,Clinically isolated syndrome
+clinically isolated syndrome,SNOMED CT,703621006,Multifocal clinically isolated syndrome
+clinically isolated syndrome,SNOMED CT,703622004,Monofocal clinically isolated syndrome
+clinically isolated syndrome,SNOMED CT,804031000000103,Clinically isolated syndrome
+clinically isolated syndrome,SNOMED CT,807361000000101,Clinically isolated syndrome

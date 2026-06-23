@@ -1,0 +1,75 @@
+# Databricks notebook source
+# MAGIC %md # CCU096_01-D09-define_controls_start_date
+# MAGIC  
+# MAGIC **Description** This notebook defines the start date (or baseline date) for individuals in the control group.
+# MAGIC  
+# MAGIC **Authors** Stelios Boulitsakis Logothetis
+# MAGIC  
+# MAGIC 
+# MAGIC
+# MAGIC **Acknowledgements** Based on previous work by Carmen Petitjean, Spencer Keene for CCU004_03 and the Health Data Science Team, BHF Data Science Centre.
+# MAGIC
+# MAGIC **Data Output**
+# MAGIC - **`tmp_inc_exc_cohort_controls_with_start_date`** : cohort remaining after inclusion/exclusion criteria applied.
+
+# COMMAND ----------
+
+# MAGIC %md # 0. Setup
+
+# COMMAND ----------
+
+# DBTITLE 1,Libraries
+import pyspark.sql.functions as f
+from pyspark.sql import Column, DataFrame
+
+# COMMAND ----------
+
+# DBTITLE 1,Functions
+# MAGIC %run "shds/common/functions"
+
+# COMMAND ----------
+
+# MAGIC %md # 1. Parameters
+
+# COMMAND ----------
+
+# MAGIC %run "./CCU096_01-D01-parameters"
+
+# COMMAND ----------
+
+# MAGIC %md # 2. Data Sources
+
+# COMMAND ----------
+
+# DBTITLE 1,Import data sources
+# Sources for basic inclusion/exclusion
+skinny           = spark.table(Paths.cur_skinny)
+inc_exc_controls = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_cohort_controls')
+first_record     = spark.table(f'{Project.dsa}.{Project.name}_tmp_earliest_medical_dates')
+
+# COMMAND ----------
+
+# MAGIC %md # 3. Prepare
+
+# COMMAND ----------
+
+# Earliest medical record dates
+first_record_1 = first_record.select('PERSON_ID', f.col('DATE').alias('GDPPR_EARLIEST'))
+
+df_starting = (
+    skinny
+    .join(inc_exc_controls.select('PERSON_ID'), on='PERSON_ID', how='inner')
+    .join(first_record_1, on='PERSON_ID', how='left')
+    .withColumn("date_18", f.add_months(f.col('date_of_birth'), 18*12))
+    .withColumn('entry_date', f.greatest(f.col('date_18'), f.col('GDPPR_EARLIEST'), f.to_date(f.lit(Project.study_start_date))))
+    .select('PERSON_ID', 'entry_date')
+)
+
+# COMMAND ----------
+
+# MAGIC %md # 7. Save
+
+# COMMAND ----------
+
+# DBTITLE 1,Save post-inclusion/exclusion cohort
+save_table(df=df_starting, out_name=f'{Project.name}_tmp_inc_exc_controls_start_date', save_previous=True)

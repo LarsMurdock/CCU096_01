@@ -1,0 +1,143 @@
+# Databricks notebook source
+# MAGIC %md # CCU096_01-D08a-define_earliest_medical_record
+# MAGIC  
+# MAGIC **Description** This notebook defines the earliest medical record for every eligible individual.
+# MAGIC  
+# MAGIC **Authors** Robert Fletcher
+# MAGIC  
+# MAGIC 
+# MAGIC
+# MAGIC **Data Output**
+# MAGIC - **`tmp_inc_exc_earliest_medical_record`** : earliest medical record for all eligible individuals.
+
+# COMMAND ----------
+
+# DBTITLE 1,Libraries
+import pyspark.sql.functions as f
+from pyspark.sql import Column, DataFrame
+
+from pyspark.sql.window import Window as w
+
+# COMMAND ----------
+
+# DBTITLE 1,Functions
+# MAGIC %run "shds/common/functions"
+
+# COMMAND ----------
+
+# MAGIC %run "./CCU096_01-D01-parameters"
+
+# COMMAND ----------
+
+# DBTITLE 1,Load data
+inc_exc_first = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_cohort')
+
+# Data
+hes_apc_long  = spark.table(Paths.cur_hes_apc_long)
+hes_op_long = spark.table(Paths.cur_hes_op_long)
+gdppr = load_dataset_batch('gdppr')
+
+# COMMAND ----------
+
+# DBTITLE 1,Define first available medical record for HES-APC
+# Define dataset ordering
+window = w.partitionBy('PERSON_ID').orderBy('EPISTART')
+
+# Prepare data
+hes_apc_dates = (
+    hes_apc_long
+    .join(inc_exc_first.select('PERSON_ID'), on='PERSON_ID', how='inner')
+    .select('PERSON_ID', 'EPISTART')
+    .filter(f.col('EPISTART') >= '1900-01-01')
+    .distinct()
+    .withColumn('row', f.row_number().over(window))
+    .filter(f.col('row') == 1)
+    .drop('row')
+    .distinct()
+)
+
+save_table(df=hes_apc_dates, out_name=f'{Project.name}_tmp_hes_apc_earliest_date', save_previous=False)
+
+# COMMAND ----------
+
+# DBTITLE 1,Define first available medical record for GDPPR
+# Define dataset ordering
+window2 = w.partitionBy('PERSON_ID').orderBy('DATE')
+
+# Prepare data
+gdppr_dates = (
+    gdppr
+    .withColumnRenamed('NHS_NUMBER_DEID', 'PERSON_ID')
+    .join(inc_exc_first.select('PERSON_ID'), on='PERSON_ID', how='inner')
+    .select('PERSON_ID', 'DATE')
+    .filter(f.col('DATE') >= '1900-01-01')
+    .distinct()
+    .withColumn('row', f.row_number().over(window2))
+    .filter(f.col('row') == 1)
+    .drop("row")
+)
+
+save_table(df=gdppr_dates, out_name=f'{Project.name}_tmp_gdppr_earliest_date', save_previous=False)
+
+# COMMAND ----------
+
+# DBTITLE 1,Define first available medical record for HES-OP
+# Define dataset ordering
+window3 = w.partitionBy('PERSON_ID').orderBy('APPTDATE')
+
+# Prepare data
+hes_op_dates = (
+    hes_op_long
+    .select('PERSON_ID', 'APPTDATE')
+    .filter(f.col('APPTDATE') >= '1900-01-01')
+    .distinct()
+    .withColumn('row', f.row_number().over(window3))
+    .filter(f.col('row') == 1)
+    .drop("row")
+)
+
+save_table(df=hes_op_dates, out_name=f'{Project.name}_tmp_hes_op_earliest_date', save_previous=False)
+
+# COMMAND ----------
+
+gdppr_dates = spark.table(f'{Project.dsa}.{Project.name}_tmp_gdppr_earliest_date')
+hes_apc_dates = spark.table(f'{Project.dsa}.{Project.name}_tmp_hes_apc_earliest_date')
+hes_op_dates = spark.table(f'{Project.dsa}.{Project.name}_tmp_hes_op_earliest_date')
+
+# COMMAND ----------
+
+# DBTITLE 1,Combine data
+combined = (
+    gdppr_dates
+    .join(hes_apc_dates, on='PERSON_ID', how='left')
+    .join(hes_op_dates, on='PERSON_ID', how='left')
+    .withColumn("earliest_date", f.least("DATE", "EPISTART", "APPTDATE"))
+)
+display(combined)
+
+# COMMAND ----------
+
+# DBTITLE 1,QC combined dataframe
+rows = combined.count()
+pats = combined.agg(f.countDistinct(f.col('PERSON_ID'))).collect()[0][0]
+na_hes_apc = combined.filter(f.col('EPISTART').isNull()).agg(f.countDistinct(f.col('PERSON_ID'))).collect()[0][0]
+na_gdppr = combined.filter(f.col('DATE').isNull()).agg(f.countDistinct(f.col('PERSON_ID'))).collect()[0][0]
+na_hes_op = combined.filter(f.col('APPTDATE').isNull()).agg(f.countDistinct(f.col('PERSON_ID'))).collect()[0][0]
+na_combined = combined.filter(f.col('earliest_date').isNull()).agg(f.countDistinct(f.col('PERSON_ID'))).collect()[0][0]
+
+print('QC INFORMATION')
+print('-------------------------------')
+print('General')
+print(f'  Total rows: {rows}')
+print(f'  Unique patients: {pats}')
+print('---')
+print('Missing data')
+print(f'  Missing HES-APC dates: {na_hes_apc}')
+print(f'  Missing GDPPR dates: {na_gdppr}')
+print(f'  Missing HES-OP dates: {na_hes_op}')
+print(f'  Missing combined dates: {na_combined}')
+
+# COMMAND ----------
+
+# DBTITLE 1,Write data
+save_table(df=combined, out_name=f'{Project.name}_tmp_earliest_medical_dates', save_previous=False)

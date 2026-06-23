@@ -1,0 +1,2072 @@
+# Databricks notebook source
+# MAGIC %md # CCU096_01-D12-compute_incidence
+# MAGIC
+# MAGIC **Description** This notebook computes incidence of obesity from start of the study to the end of the study. 
+# MAGIC
+# MAGIC **Authors** Stelios Boulitsakis Logothetis
+# MAGIC
+# MAGIC 
+# MAGIC
+# MAGIC **Acknowledgements** 
+# MAGIC
+# MAGIC **Data Output**
+# MAGIC  - `export_incidence_all`
+# MAGIC  - `export_incidence_sex`
+# MAGIC  - `export_incidence_eth5`
+# MAGIC  - `export_incidence_eth18`
+# MAGIC  - `export_incidence_imd`
+# MAGIC  - `export_incidence_reg`
+# MAGIC  - `export_incidence_msoa` 
+
+# COMMAND ----------
+
+# MAGIC %md # 0. Setup
+
+# COMMAND ----------
+
+# DBTITLE 1,Libraries
+from pyspark.sql import functions as f, Window as w
+from pyspark.sql.types import StructType, StructField, StringType
+from functools import reduce
+from datetime import datetime
+import numpy as np
+import pandas as pd 
+import re
+from operator import add
+
+import matplotlib
+import matplotlib.pyplot as plt
+import seaborn as sns
+import mythoslib
+
+# COMMAND ----------
+
+# DBTITLE 1,Functions
+# MAGIC %run "shds/common/functions"
+
+# COMMAND ----------
+
+# MAGIC %md # 1. Parameters
+
+# COMMAND ----------
+
+# MAGIC %run "./CCU096_01-D01-parameters"
+
+# COMMAND ----------
+
+# MAGIC %md # 2. Incidence Functions
+
+# COMMAND ----------
+
+# MAGIC %run "./functions/incidence_functions"
+
+# COMMAND ----------
+
+# MAGIC %md # 3. Data Sources
+
+# COMMAND ----------
+
+skinny  = spark.table(Paths.cur_skinny)
+
+# Ethnicity-specific obesity definitions
+cases    = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_cohort_cases')
+controls = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_cohort_controls')
+
+# Same definition of obesity for everyone
+cases_30kgm2    = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_cohort_cases_30kgm2')
+controls_30kgm2 = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_cohort_controls_30kgm2')
+
+# Pregnancy analysis stuff
+cases_preg    = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_cohort_cases_pregnancy')
+controls_preg = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_cohort_controls_pregnancy')
+
+# Another sensitivity analysis for looking at number of GP appointments
+gdppr = load_dataset_batch('gdppr')
+
+# Pregnancy data (raw)
+dbc = f''
+maternity_exclusions = spark.table(f'{dbc}.ccu096_hes_mother_linked')
+mat2 = maternity_exclusions.select(f.col("person_id_mother_deid").alias('PERSON_ID'), "exclusion_start", "exclusion_end")
+
+first_record = spark.table(f'{Project.dsa}.{Project.name}_tmp_earliest_medical_dates')
+
+# LSOA/MSOA mapping table
+#***REMOVED***region_codes = spark.table(f'.hds_cur_lsoa_region_lookup')
+region_codes = spark.createDataFrame(
+    pd.read_csv('./codelists/lsoa_msoa_mapping.csv')
+    [['LSOA11CD', 'MSOA11CD']]
+).select(f.col('MSOA11CD').alias('msoa_code'), f.col('LSOA11CD').alias('lsoa_code'))
+
+# 1) Read as plain Python strings, treating "NA" as null
+pdf = pd.read_csv(
+    "./codelists/msoa_lac_mapping.csv",
+    na_values=["NA"],
+    dtype=str,                # forces *every* column to be Python str/NaN
+)
+
+# 2) Optionally drop or fill NaNs in pandas:
+pdf = pdf[["MSOA11CD","LAD17CD","LAD17NM","LACCD","LACNM","LACLASS","TCITY15CD","TCITY15NM"]]
+
+# 3) Give Spark an explicit string-only schema
+schema = StructType([
+    StructField("MSOA11CD",   StringType(), True),
+    StructField("LAD17CD",    StringType(), True),
+    StructField("LAD17NM",    StringType(), True),
+    StructField("LACCD",      StringType(), True),
+    StructField("LACNM",      StringType(), True),
+    StructField("LACLASS",    StringType(), True),
+    StructField("TCITY15CD",  StringType(), True),
+    StructField("TCITY15NM",  StringType(), True),
+])
+
+lac_codes = spark.createDataFrame(pdf, schema=schema).withColumnRenamed('MSOA11CD', 'msoa')
+
+# COMMAND ----------
+
+lac_codes.select('msoa').distinct().count()
+
+# COMMAND ----------
+
+region_codes.select('msoa_code').distinct().count()
+
+# COMMAND ----------
+
+# MAGIC %md # 4. Prepare
+
+# COMMAND ----------
+
+display(lac_codes)
+
+# COMMAND ----------
+
+# DBTITLE 1,Get first GP record
+# Earliest medical record dates
+first_record_1 = first_record.select('PERSON_ID', f.col('DATE').alias('GDPPR_EARLIEST'))
+
+# COMMAND ----------
+
+# DBTITLE 1,Join tables (ethnicity specific)
+# Join cases and controls
+trends = (
+    skinny
+    .join(cases.drop('GDPPR_FIRST').unionByName(controls).select('PERSON_ID', 'cov_hx_first_obesity_date'), on='PERSON_ID', how='inner')
+    .join(region_codes.select(f.col('lsoa_code').alias('lsoa'), f.col('msoa_code').alias('msoa')), on='lsoa', how='left')
+    .join(lac_codes, on='msoa', how='left')
+    .join(first_record_1, on='PERSON_ID', how='left')
+    .select(
+        'PERSON_ID', 'cov_hx_first_obesity_date', 'date_of_birth', 'date_of_death', 'sex', 'ethnicity_18_group',
+        'ethnicity_5_group', 'lsoa', 'msoa', 'LACCD', 'LACNM', 'LACLASS', 'TCITY15CD', 'TCITY15NM', 'region', 'imd_quintile', 'imd_decile', 'GDPPR_EARLIEST'
+    )
+
+    #***REMOVED***Recode ethnicity
+    .withColumn(
+        'ethnicity_5_recoded', 
+        f.when(f.col('ethnicity_5_group').rlike('^White'), 'White')
+        .when(f.col('ethnicity_5_group').rlike('^Asian'), 'Asian')
+        .when(f.col('ethnicity_5_group').rlike('^Black'), 'Black')
+        .when(f.col('ethnicity_5_group').rlike('^Mixed|Other'), 'Mixed')
+        .otherwise(f.lit('Missing'))
+    )
+    .withColumn(
+        'ethnicity_18_recoded', 
+        f.when(f.col('ethnicity_18_group').rlike('^Brit|^Iris|^Trav|^Paki|^Indi|^Bang|^Chin|^Arab|^Afri|^Cari'), f.col('ethnicity_18_group'))
+        .when(f.col('ethnicity_18_group').rlike('^White and Asian$'), 'White_Asian')
+        .when(f.col('ethnicity_18_group').rlike('^White and Black Afric'), 'White_Black_African')
+        .when(f.col('ethnicity_18_group').rlike('^White and Black Carib'), 'White_Black_Caribbean')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Asi'), 'Asian_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Bla'), 'Black_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Whi'), 'White_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other mix'), 'Mixed_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other ethn'), 'Other')
+        .otherwise(f.lit('Missing'))
+    )
+
+    # Recode region
+    .withColumn(
+        'region_recoded',
+        f.when(f.col('region').rlike('York'), 'Yorkshire')
+        .when(f.col('region').rlike('West Mid'), 'West_Mid')
+        .when(f.col('region').rlike('East Mid'), 'East_Mid')
+        .when(f.col('region').rlike('East of'), 'East_Eng')
+        .when(f.col('region').rlike('London'), 'London')
+        .when(f.col('region').rlike('North East'), 'NE')
+        .when(f.col('region').rlike('North West'), 'NW')
+        .when(f.col('region').rlike('South East'), 'SE')
+        .when(f.col('region').rlike('South West'), 'SW')
+        .otherwise(f.lit('Missing'))
+    )
+
+    # Combined column(s) for mutual standardisation
+    .withColumn("combined_1lvl", f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile")))
+    .withColumn("combined_2lvl", f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile"), f.col("region_recoded")))
+    .withColumn(
+        "combined_3lvl",
+         f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile"), f.col("region_recoded"), f.col('LACLASS'))
+    )
+
+    # Drop columns
+    .drop('ethnicity_18_group', 'ethnicity_5_group', 'region')
+
+    # Codes dates of turning 18 and 100
+    .withColumn('date_18',  f.add_months(f.col('date_of_birth'), 18*12))
+    .withColumn('date_100', f.add_months(f.col('date_of_birth'), 100*12))
+
+    # Remove one day from the date of turning 100 so that individuals are censored on the last day of being 99
+    .withColumn('date_100', f.date_sub(f.col('date_100'), 1))
+
+    # Code entry and exit dates
+    .withColumn('entry_date', f.greatest(f.col('date_18'), f.col('GDPPR_EARLIEST'), f.to_date(f.lit(Project.study_start_date))))
+    .withColumn(
+        'exit_date',
+        f.when(
+            f.col('cov_hx_first_obesity_date') >= f.col('entry_date'), 
+            f.least(f.col('cov_hx_first_obesity_date'), f.col('date_of_death'), f.col('date_100'), f.to_date(f.lit(Project.study_end_date)))
+        )
+        .otherwise(f.least(f.col('date_of_death'), f.col('date_100'), f.to_date(f.lit(Project.study_end_date))))
+    )
+
+    # Remove prevalent cases
+    .where((f.col('cov_hx_first_obesity_date').isNull()) | (f.col('cov_hx_first_obesity_date') >= f.col('entry_date'))) 
+)
+
+temp_save(df=trends, out_name=f'{Project.name}_tmp_incidence_data')
+
+# COMMAND ----------
+
+# DBTITLE 1,Join tables (same obesity definition for all)
+# Join cases and controls
+trends_30kgm2 = (
+    skinny
+    .join(cases_30kgm2.drop('GDPPR_FIRST').unionByName(controls_30kgm2).select('PERSON_ID', 'cov_hx_first_obesity_30kgm2_date'), on='PERSON_ID', how='inner')
+    .join(region_codes.select(f.col('lsoa_code').alias('lsoa'), f.col('msoa_code').alias('msoa')), on='lsoa', how='left')
+    .join(lac_codes, on='msoa', how='left')
+    .join(first_record_1, on='PERSON_ID', how='left')
+    .select(
+        'PERSON_ID', f.col('cov_hx_first_obesity_30kgm2_date').alias('cov_hx_first_obesity_date'), 'date_of_birth', 'date_of_death', 'sex', 'ethnicity_18_group', 'ethnicity_5_group', 'lsoa', 'msoa', 'LACCD', 'LACNM', 'LACLASS', 'TCITY15CD', 'TCITY15NM', 'region', 'imd_quintile', 'imd_decile', 'GDPPR_EARLIEST'
+    )
+
+    #***REMOVED***Recode ethnicity
+    .withColumn(
+        'ethnicity_5_recoded', 
+        f.when(f.col('ethnicity_5_group').rlike('^White'), 'White')
+        .when(f.col('ethnicity_5_group').rlike('^Asian'), 'Asian')
+        .when(f.col('ethnicity_5_group').rlike('^Black'), 'Black')
+        .when(f.col('ethnicity_5_group').rlike('^Mixed|Other'), 'Mixed')
+        .otherwise(f.lit('Missing'))
+    )
+    .withColumn(
+        'ethnicity_18_recoded', 
+        f.when(f.col('ethnicity_18_group').rlike('^Brit|^Iris|^Trav|^Paki|^Indi|^Bang|^Chin|^Arab|^Afri|^Cari'), f.col('ethnicity_18_group'))
+        .when(f.col('ethnicity_18_group').rlike('^White and Asian$'), 'White_Asian')
+        .when(f.col('ethnicity_18_group').rlike('^White and Black Afric'), 'White_Black_African')
+        .when(f.col('ethnicity_18_group').rlike('^White and Black Carib'), 'White_Black_Caribbean')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Asi'), 'Asian_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Bla'), 'Black_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Whi'), 'White_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other mix'), 'Mixed_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other ethn'), 'Other')
+        .otherwise(f.lit('Missing'))
+    )
+
+    # Recode region
+    .withColumn(
+        'region_recoded',
+        f.when(f.col('region').rlike('York'), 'Yorkshire')
+        .when(f.col('region').rlike('West Mid'), 'West_Mid')
+        .when(f.col('region').rlike('East Mid'), 'East_Mid')
+        .when(f.col('region').rlike('East of'), 'East_Eng')
+        .when(f.col('region').rlike('London'), 'London')
+        .when(f.col('region').rlike('North East'), 'NE')
+        .when(f.col('region').rlike('North West'), 'NW')
+        .when(f.col('region').rlike('South East'), 'SE')
+        .when(f.col('region').rlike('South West'), 'SW')
+        .otherwise(f.lit('Missing'))
+    )
+
+    # Combined column(s) for mutual standardisation
+    .withColumn("combined_1lvl", f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile")))
+    .withColumn("combined_2lvl", f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile"), f.col("region_recoded")))
+    .withColumn(
+        "combined_3lvl",
+         f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile"), f.col("region_recoded"), f.col('LACLASS'))
+    )
+
+    .withColumn("combined_1lvl_18grp", f.concat_ws("_", f.col("ethnicity_18_recoded"), f.col("imd_quintile")))
+    
+    # Drop columns
+    .drop('ethnicity_18_group', 'ethnicity_5_group', 'region')
+
+    # Codes dates of turning 18 and 100
+    .withColumn('date_18',  f.add_months(f.col('date_of_birth'), 18*12))
+    .withColumn('date_100', f.add_months(f.col('date_of_birth'), 100*12))
+
+    # Remove one day from the date of turning 100 so that individuals are censored on the last day of being 99
+    .withColumn('date_100', f.date_sub(f.col('date_100'), 1))
+
+    # Code entry and exit dates
+    .withColumn('entry_date', f.greatest(f.col('date_18'), f.col('GDPPR_EARLIEST'), f.to_date(f.lit(Project.study_start_date))))
+    .withColumn(
+        'exit_date',
+        f.when(
+            f.col('cov_hx_first_obesity_date') >= f.col('entry_date'), 
+            f.least(f.col('cov_hx_first_obesity_date'), f.col('date_of_death'), f.col('date_100'), f.to_date(f.lit(Project.study_end_date)))
+        )
+        .otherwise(f.least(f.col('date_of_death'), f.col('date_100'), f.to_date(f.lit(Project.study_end_date))))
+    )
+
+    # Remove prevalent cases
+    .where((f.col('cov_hx_first_obesity_date').isNull()) | (f.col('cov_hx_first_obesity_date') >= f.col('entry_date'))) 
+)
+
+temp_save(df=trends_30kgm2, out_name=f'{Project.name}_tmp_incidence_data_30kgm2')
+
+# COMMAND ----------
+
+# DBTITLE 1,Join tables (pregnancy analysis)
+# Join cases and controls
+trends_preg = (
+    skinny
+    .join(cases_preg.drop('GDPPR_FIRST').unionByName(controls_preg).select('PERSON_ID', 'cov_hx_first_obesity_30kgm2_date'), on='PERSON_ID', how='inner')
+    .join(region_codes.select(f.col('lsoa_code').alias('lsoa'), f.col('msoa_code').alias('msoa')), on='lsoa', how='left')
+    .join(lac_codes, on='msoa', how='left')
+    .join(first_record_1, on='PERSON_ID', how='left')
+    .select(
+        'PERSON_ID', f.col('cov_hx_first_obesity_30kgm2_date').alias('cov_hx_first_obesity_date'), 'date_of_birth', 'date_of_death', 'sex', 'ethnicity_18_group', 'ethnicity_5_group', 'lsoa', 'msoa', 'LACCD', 'LACNM', 'LACLASS', 'TCITY15CD', 'TCITY15NM', 'region', 'imd_quintile', 'imd_decile', 'GDPPR_EARLIEST'
+    ) 
+
+    # Only interested in trends in women
+    .where(f.col('sex') == 'F')
+
+    # Codes dates of turning 18 and 100
+    .withColumn('date_18',  f.add_months(f.col('date_of_birth'), 18*12))
+    .withColumn('date_100', f.add_months(f.col('date_of_birth'), 100*12))
+
+    # Remove one day from the date of turning 100 so that individuals are censored on the last day of being 99
+    .withColumn('date_100', f.date_sub(f.col('date_100'), 1))
+
+)
+# display(trends_preg)
+trends_preg = temp_save(df=trends_preg, out_name=f'{Project.name}_tmp_incidence_data_pregnancy_first')
+
+# COMMAND ----------
+
+# DBTITLE 1,Pregnancy analysis step 1
+df = (
+    trends_preg
+    .join(mat2, on='PERSON_ID', how="inner")
+    .select("PERSON_ID", "exclusion_start", "exclusion_end", "cov_hx_first_obesity_date", "date_of_death", "date_18", "date_100", "GDPPR_EARLIEST")
+)
+
+from pyspark.sql import functions as f, types as t
+
+# --- Inputs ---
+study_start_lit = f.to_date(f.lit("2019-11-01"))
+study_end_lit   = f.to_date(f.lit(Project.study_end_date))  # your study end date from config
+
+# df columns (dates) are assumed to be DateType already; cast if needed:
+# for col in ["exclusion_start","exclusion_end","cov_hx_first_obesity_date","date_of_death","date_100","date_18","GDPPR_earliest"]:
+#     df = df.withColumn(col, f.to_date(f.col(col)))
+
+pregs = (
+    f.collect_list(
+        f.struct(
+            f.col("exclusion_start").alias("start"),
+            f.col("exclusion_end").alias("end")
+        )
+    ).alias("pregs")
+)
+
+person_df = (
+    df
+    .groupBy(
+        "PERSON_ID",
+        "cov_hx_first_obesity_date",
+        "date_of_death",
+        "date_100",
+        "date_18",
+        "GDPPR_earliest"
+    )
+    .agg(pregs)
+)
+
+segment_schema = t.ArrayType(
+    t.StructType([
+        t.StructField("PERSON_ID", t.StringType(), False),
+        t.StructField("risk_start", t.DateType(), True),
+        t.StructField("risk_end", t.DateType(), True),
+        t.StructField("end_reason", t.StringType(), True)
+    ])
+)
+
+def merge_intervals(intervals):
+    ivs = [(i["start"], i["end"]) for i in intervals if i["start"] and i["end"]]
+    ivs = sorted(ivs, key=lambda x: x[0])
+    merged = []
+    for s, e in ivs:
+        if not merged or s > merged[-1][1]:
+            merged.append([s, e])
+        else:
+            merged[-1][1] = max(merged[-1][1], e)
+    return merged
+
+def min_date(*ds):
+    ds = [d for d in ds if d is not None]
+    return min(ds) if ds else None
+
+def max_date(*ds):
+    ds = [d for d in ds if d is not None]
+    return max(ds) if ds else None
+
+@f.udf(segment_schema)
+def build_at_risk_segments_udf(person_id,
+                               cov_first_obesity,
+                               date_of_death,
+                               date_100,
+                               date_18,
+                               gdppr_earliest,
+                               pregs):
+    from datetime import date
+    study_start = date(2019, 11, 1)
+    study_end   = date(2025, 4, 30)  # ensure this is a datetime.date object
+
+    start_elig = max_date(study_start, date_18, gdppr_earliest)
+    if start_elig is None:
+        return []
+
+    # censor can now also happen at study_end
+    censor_date = min_date(cov_first_obesity, date_of_death, date_100, study_end)
+
+    if censor_date is not None and censor_date <= start_elig:
+        return []
+
+    merged_pregs = merge_intervals(pregs or [])
+    segs = []
+    current = start_elig
+
+    def censor_reason(end_date):
+        choices = []
+        if cov_first_obesity and cov_first_obesity == end_date:
+            choices.append(("obesity", cov_first_obesity))
+        if date_of_death and date_of_death == end_date:
+            choices.append(("death", date_of_death))
+        if date_100 and date_100 == end_date:
+            choices.append(("age100", date_100))
+        if study_end and study_end == end_date:
+            choices.append(("study_end", study_end))
+        order = {"obesity": 0, "death": 1, "age100": 2, "study_end": 3}
+        if choices:
+            choices.sort(key=lambda t: order[t[0]])
+            return choices[0][0]
+        return "censor"
+
+    for ps, pe in merged_pregs:
+        if censor_date is not None and current >= censor_date:
+            break
+        if pe <= current:
+            continue
+        if ps > current:
+            end = ps
+            if censor_date is not None and censor_date < end:
+                segs.append({
+                    "PERSON_ID": person_id,
+                    "risk_start": current,
+                    "risk_end": censor_date,
+                    "end_reason": censor_reason(censor_date)
+                })
+                return segs
+            segs.append({
+                "PERSON_ID": person_id,
+                "risk_start": current,
+                "risk_end": end,
+                "end_reason": "pregnancy"
+            })
+        current = max_date(current, pe)
+        if censor_date is not None and censor_date <= current:
+            return segs
+
+    if censor_date is None or current < censor_date:
+        end = censor_date
+        end_reason = censor_reason(end) if end is not None else None
+        segs.append({
+            "PERSON_ID": person_id,
+            "risk_start": current,
+            "risk_end": end,
+            "end_reason": end_reason
+        })
+
+    return segs
+
+out = (
+    person_df
+    .withColumn(
+        "segments",
+        build_at_risk_segments_udf(
+            f.col("PERSON_ID"),
+            f.col("cov_hx_first_obesity_date"),
+            f.col("date_of_death"),
+            f.col("date_100"),
+            f.col("date_18"),
+            f.col("GDPPR_earliest"),
+            f.col("pregs")
+        )
+    )
+    .withColumn("segment", f.explode("segments"))
+    .select(
+        f.col("segment.PERSON_ID").alias("PERSON_ID"),
+        f.col("segment.risk_start").alias("entry_date"),
+        f.col("segment.risk_end").alias("exit_date"),
+        f.col("segment.end_reason").alias("end_reason")
+    )
+    .join(trends_preg, on='PERSON_ID', how='inner')
+    #***REMOVED***Recode ethnicity
+    .withColumn(
+        'ethnicity_5_recoded', 
+        f.when(f.col('ethnicity_5_group').rlike('^White'), 'White')
+        .when(f.col('ethnicity_5_group').rlike('^Asian'), 'Asian')
+        .when(f.col('ethnicity_5_group').rlike('^Black'), 'Black')
+        .when(f.col('ethnicity_5_group').rlike('^Mixed|Other'), 'Mixed')
+        .otherwise(f.lit('Missing'))
+    )
+    .withColumn(
+        'ethnicity_18_recoded', 
+        f.when(f.col('ethnicity_18_group').rlike('^Brit|^Iris|^Trav|^Paki|^Indi|^Bang|^Chin|^Arab|^Afri|^Cari'), f.col('ethnicity_18_group'))
+        .when(f.col('ethnicity_18_group').rlike('^White and Asian$'), 'White_Asian')
+        .when(f.col('ethnicity_18_group').rlike('^White and Black Afric'), 'White_Black_African')
+        .when(f.col('ethnicity_18_group').rlike('^White and Black Carib'), 'White_Black_Caribbean')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Asi'), 'Asian_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Bla'), 'Black_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Whi'), 'White_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other mix'), 'Mixed_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other ethn'), 'Other')
+        .otherwise(f.lit('Missing'))
+    )
+
+    # Recode region
+    .withColumn(
+        'region_recoded',
+        f.when(f.col('region').rlike('York'), 'Yorkshire')
+        .when(f.col('region').rlike('West Mid'), 'West_Mid')
+        .when(f.col('region').rlike('East Mid'), 'East_Mid')
+        .when(f.col('region').rlike('East of'), 'East_Eng')
+        .when(f.col('region').rlike('London'), 'London')
+        .when(f.col('region').rlike('North East'), 'NE')
+        .when(f.col('region').rlike('North West'), 'NW')
+        .when(f.col('region').rlike('South East'), 'SE')
+        .when(f.col('region').rlike('South West'), 'SW')
+        .otherwise(f.lit('Missing'))
+    )
+
+    # Combined column(s) for mutual standardisation
+    .withColumn("combined_1lvl", f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile")))
+    .withColumn("combined_2lvl", f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile"), f.col("region_recoded")))
+    .withColumn(
+        "combined_3lvl",
+         f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile"), f.col("region_recoded"), f.col('LACLASS'))
+    )
+    
+    # Drop columns
+    .drop('ethnicity_18_group', 'ethnicity_5_group', 'region')
+
+    # Codes dates of turning 18 and 100
+    .withColumn('date_18',  f.add_months(f.col('date_of_birth'), 18*12))
+    .withColumn('date_100', f.add_months(f.col('date_of_birth'), 100*12))
+
+    # Remove one day from the date of turning 100 so that individuals are censored on the last day of being 99
+    .withColumn('date_100', f.date_sub(f.col('date_100'), 1))
+)
+
+#***REMOVED***Get earliest entry date for all women
+earliest_entry = (
+    out.groupBy("PERSON_ID")
+       .agg(f.min("entry_date").alias("earliest_entry_date"))
+)
+
+trends_preg_table1 = (
+    out.join(earliest_entry, on="PERSON_ID", how="left")
+       .filter(
+           (f.col("cov_hx_first_obesity_date").isNull()) | 
+           (f.col("cov_hx_first_obesity_date") >= f.col("earliest_entry_date"))
+       )
+       .drop("earliest_entry_date")
+)
+
+# COMMAND ----------
+
+# DBTITLE 1,Pregancy analysis step 2
+df = (
+    trends_preg
+    .join(mat2, on='PERSON_ID', how="left_anti")
+    .select("PERSON_ID", "cov_hx_first_obesity_date")
+)
+
+trends_preg_table2 = (
+    skinny
+    .join(df, on='PERSON_ID', how='inner')
+    .join(region_codes.select(f.col('lsoa_code').alias('lsoa'), f.col('msoa_code').alias('msoa')), on='lsoa', how='left')
+    .join(lac_codes, on='msoa', how='left')
+    .join(first_record_1, on='PERSON_ID', how='left')
+    .select(
+        'PERSON_ID', 'cov_hx_first_obesity_date', 'date_of_birth', 'date_of_death', 'sex', 'ethnicity_18_group', 'ethnicity_5_group', 'lsoa', 'msoa', 'LACCD', 'LACNM', 'LACLASS', 'TCITY15CD', 'TCITY15NM', 'region', 'imd_quintile', 'imd_decile', 'GDPPR_EARLIEST'
+    )
+
+    #***REMOVED***Recode ethnicity
+    .withColumn(
+        'ethnicity_5_recoded', 
+        f.when(f.col('ethnicity_5_group').rlike('^White'), 'White')
+        .when(f.col('ethnicity_5_group').rlike('^Asian'), 'Asian')
+        .when(f.col('ethnicity_5_group').rlike('^Black'), 'Black')
+        .when(f.col('ethnicity_5_group').rlike('^Mixed|Other'), 'Mixed')
+        .otherwise(f.lit('Missing'))
+    )
+    .withColumn(
+        'ethnicity_18_recoded', 
+        f.when(f.col('ethnicity_18_group').rlike('^Brit|^Iris|^Trav|^Paki|^Indi|^Bang|^Chin|^Arab|^Afri|^Cari'), f.col('ethnicity_18_group'))
+        .when(f.col('ethnicity_18_group').rlike('^White and Asian$'), 'White_Asian')
+        .when(f.col('ethnicity_18_group').rlike('^White and Black Afric'), 'White_Black_African')
+        .when(f.col('ethnicity_18_group').rlike('^White and Black Carib'), 'White_Black_Caribbean')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Asi'), 'Asian_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Bla'), 'Black_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Whi'), 'White_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other mix'), 'Mixed_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other ethn'), 'Other')
+        .otherwise(f.lit('Missing'))
+    )
+
+    # Recode region
+    .withColumn(
+        'region_recoded',
+        f.when(f.col('region').rlike('York'), 'Yorkshire')
+        .when(f.col('region').rlike('West Mid'), 'West_Mid')
+        .when(f.col('region').rlike('East Mid'), 'East_Mid')
+        .when(f.col('region').rlike('East of'), 'East_Eng')
+        .when(f.col('region').rlike('London'), 'London')
+        .when(f.col('region').rlike('North East'), 'NE')
+        .when(f.col('region').rlike('North West'), 'NW')
+        .when(f.col('region').rlike('South East'), 'SE')
+        .when(f.col('region').rlike('South West'), 'SW')
+        .otherwise(f.lit('Missing'))
+    )
+
+    # Combined column(s) for mutual standardisation
+    .withColumn("combined_1lvl", f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile")))
+    .withColumn("combined_2lvl", f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile"), f.col("region_recoded")))
+    .withColumn(
+        "combined_3lvl",
+         f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile"), f.col("region_recoded"), f.col('LACLASS'))
+    )
+    
+    # Drop columns
+    .drop('ethnicity_18_group', 'ethnicity_5_group', 'region')
+
+    # Codes dates of turning 18 and 100
+    .withColumn('date_18',  f.add_months(f.col('date_of_birth'), 18*12))
+    .withColumn('date_100', f.add_months(f.col('date_of_birth'), 100*12))
+
+    # Remove one day from the date of turning 100 so that individuals are censored on the last day of being 99
+    .withColumn('date_100', f.date_sub(f.col('date_100'), 1))
+
+    # Code entry and exit dates
+    .withColumn('entry_date', f.greatest(f.col('date_18'), f.col('GDPPR_EARLIEST'), f.to_date(f.lit(Project.study_start_date))))
+    .withColumn(
+        'exit_date',
+        f.when(
+            f.col('cov_hx_first_obesity_date') >= f.col('entry_date'), 
+            f.least(f.col('cov_hx_first_obesity_date'), f.col('date_of_death'), f.col('date_100'), f.to_date(f.lit(Project.study_end_date)))
+        )
+        .otherwise(f.least(f.col('date_of_death'), f.col('date_100'), f.to_date(f.lit(Project.study_end_date))))
+    )
+
+    # Remove prevalent cases
+    .where((f.col('cov_hx_first_obesity_date').isNull()) | (f.col('cov_hx_first_obesity_date') >= f.col('entry_date'))) 
+
+    # End reason
+    .withColumn('end_reason', f.lit('none'))
+)
+
+trends_preg_table = (
+    trends_preg_table1
+    .unionByName(trends_preg_table2)
+    # Useful later when defining time at risk
+    .withColumn(
+        'date_100', 
+        f.when(f.col('end_reason') == 'pregnancy', f.col('exit_date'))
+        .otherwise(f.col("date_100"))
+    )
+)
+trends_preg_table = temp_save(df=trends_preg_table, out_name=f'{Project.name}_tmp_incidence_data_pregnancy')
+
+# COMMAND ----------
+
+display(trends_preg_table)
+
+# COMMAND ----------
+
+# DBTITLE 1,Reload
+trends            = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_data')
+trends_30kgm2     = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_data_30kgm2')
+trends_preg_table = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_data_pregnancy')
+
+# COMMAND ----------
+
+# DBTITLE 1,Prepare GDPPR
+# Prepare GDPPR 
+attendences = (
+    gdppr
+    .select('NHS_NUMBER_DEID', 'DATE')
+    .withColumnRenamed('NHS_NUMBER_DEID', 'PERSON_ID')
+    .filter((f.col('DATE') >= '2019-11-01') & (f.col('DATE') <= '2025-04-30'))
+    .distinct()
+)
+attendances = temp_save(df=attendences, out_name=f'{Project.name}_tmp_gdppr_attendances')
+
+# COMMAND ----------
+
+# Reload
+attendances = spark.table(f'{Project.dsa}.{Project.name}_tmp_gdppr_attendances')
+
+# COMMAND ----------
+
+# Identify people who attend GP at least once every year
+t = (trends_30kgm2
+     .select("PERSON_ID",
+             f.to_date("entry_date").alias("entry_date"),
+             f.to_date("exit_date").alias("exit_date")))
+
+a = (attendances
+     .select("PERSON_ID", f.to_date("DATE").alias("visit_date")))
+
+# Keep only visits within follow-up window
+vis = (t.join(a, "PERSON_ID", "left")
+        .where((f.col("visit_date") >= f.col("entry_date")) &
+               (f.col("visit_date") <= f.col("exit_date"))))
+
+# Sort visits within patient and compute gaps
+w = w.partitionBy("PERSON_ID").orderBy("visit_date")
+
+vis_gaps = (vis
+    .withColumn("prev_visit", f.lag("visit_date").over(w))
+    .withColumn(
+        "gap_days",
+        f.when(f.col("prev_visit").isNull(),
+               f.datediff(f.col("visit_date"), f.col("entry_date")))  # entry -> first visit
+         .otherwise(F.datediff(F.col("visit_date"), f.col("prev_visit")))  # between visits
+    )
+)
+
+# Per patient: max gap among (entry->first, between visits) AND also check last->exit
+per_patient = (vis_gaps
+    .groupBy("PERSON_ID", "entry_date", "exit_date")
+    .agg(
+        f.count("*").alias("n_visits"),
+        f.max("gap_days").alias("max_gap_internal"),
+        f.max("visit_date").alias("last_visit")
+    )
+    .withColumn("gap_last_to_exit", f.datediff(F.col("exit_date"), f.col("last_visit")))
+    .withColumn("max_gap_overall", f.greatest("max_gap_internal", "gap_last_to_exit"))
+    .withColumn("meets_182_rule", (f.col("n_visits") > 0) & (f.col("max_gap_overall") <= 182.5))
+    .withColumn("meets_365_rule", (f.col("n_visits") > 0) & (f.col("max_gap_overall") <= 365))
+    .withColumn("meets_730_rule", (f.col("n_visits") > 0) & (f.col("max_gap_overall") <= 730))
+    .withColumn("meets_1095_rule", (f.col("n_visits") > 0) & (f.col("max_gap_overall") <= 1095))
+    .withColumn("meets_1460_rule", (f.col("n_visits") > 0) & (f.col("max_gap_overall") <= 1460))
+    .withColumn("meets_1825_rule", (f.col("n_visits") > 0) & (f.col("max_gap_overall") <= 1825))
+)
+
+result_a = (
+    t.join(per_patient.select("PERSON_ID", "meets_182_rule", "meets_365_rule", "meets_730_rule", "meets_1095_rule", "meets_1460_rule", "meets_1825_rule"), "PERSON_ID", "left")
+    .fillna({"meets_182_rule": False})
+    .fillna({"meets_365_rule": False})
+    .fillna({"meets_730_rule": False})
+    .fillna({"meets_1095_rule": False})
+    .fillna({"meets_1460_rule": False})
+    .fillna({"meets_1825_rule": False})
+)
+
+result_a = temp_save(df=result_a, out_name=f'{Project.name}_tmp_attends_gp_once_per_year_incidence')
+
+# COMMAND ----------
+
+# follow-up length in days (inclusive/exclusive choice: here it's inclusive-ish via datediff+1)
+t_fu = (t
+    .withColumn("fu_days", f.datediff(f.col("exit_date"), f.col("entry_date")) + f.lit(1))
+)
+
+# count visits in follow-up (re-use 'vis' but be careful: left join + where turns to inner)
+visit_counts = (t.join(a, "PERSON_ID", "left")
+    .where((f.col("visit_date") >= f.col("entry_date")) & (f.col("visit_date") <= f.col("exit_date")))
+    .groupBy("PERSON_ID")
+    .agg(F.count("*").alias("n_visits_in_fu"))
+)
+
+result_b = (t_fu.join(visit_counts, "PERSON_ID", "left")
+    .fillna({"n_visits_in_fu": 0})
+    .withColumn(
+        "avg_visits_per_365",
+        F.when(F.col("fu_days") > 0,
+               F.col("n_visits_in_fu") * F.lit(365.0) / F.col("fu_days"))
+         .otherwise(F.lit(None).cast("double"))
+    )
+)
+
+result_b = temp_save(df=result_b, out_name=f'{Project.name}_tmp_avg_attendances_per_year_incidence')
+
+# COMMAND ----------
+
+result_a = spark.table(f'{Project.dsa}.{Project.name}_tmp_attends_gp_once_per_year_incidence')
+result_b = spark.table(f'{Project.dsa}.{Project.name}_tmp_avg_attendances_per_year_incidence')
+
+# COMMAND ----------
+
+trends_30kgm2 = (
+    trends_30kgm2
+    .join(result_a, on=['PERSON_ID', 'entry_date', 'exit_date'], how='left')
+    .join(result_b, on=['PERSON_ID', 'entry_date', 'exit_date'], how='left')
+)
+display(trends_30kgm2)
+
+# COMMAND ----------
+
+# DBTITLE 1,Save the sensivity analysis datasets
+trends_30kgm2_182  = trends_30kgm2.filter(f.col('meets_182_rule') == True)
+trends_30kgm2_365  = trends_30kgm2.filter(f.col('meets_365_rule') == True)
+trends_30kgm2_730  = trends_30kgm2.filter(f.col('meets_730_rule') == True)
+trends_30kgm2_1095 = trends_30kgm2.filter(f.col('meets_1095_rule') == True)
+trends_30kgm2_1460 = trends_30kgm2.filter(f.col('meets_1460_rule') == True)
+trends_30kgm2_1825 = trends_30kgm2.filter(f.col('meets_1825_rule') == True)
+
+trends_30kgm2_182 = temp_save(df=trends_30kgm2_182, out_name=f'{Project.name}_tmp_incidence_data_182')
+trends_30kgm2_365 = temp_save(df=trends_30kgm2_365, out_name=f'{Project.name}_tmp_incidence_data_365')
+trends_30kgm2_730 = temp_save(df=trends_30kgm2_730, out_name=f'{Project.name}_tmp_incidence_data_730')
+trends_30kgm2_1095 = temp_save(df=trends_30kgm2_1095, out_name=f'{Project.name}_tmp_incidence_data_1095')
+trends_30kgm2_1460 = temp_save(df=trends_30kgm2_1460, out_name=f'{Project.name}_tmp_incidence_data_1460')
+trends_30kgm2_1825 = temp_save(df=trends_30kgm2_1825, out_name=f'{Project.name}_tmp_incidence_data_1825')
+
+# COMMAND ----------
+
+trends_30kgm2_182 = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_data_182')
+trends_30kgm2_365 = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_data_365')
+trends_30kgm2_730 = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_data_730')
+trends_30kgm2_1095 = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_data_1095')
+trends_30kgm2_1460 = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_data_1460')
+trends_30kgm2_1825 = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_data_1825')
+
+# COMMAND ----------
+
+# MAGIC %md # 5. Compute days at risk
+
+# COMMAND ----------
+
+# DBTITLE 1,Run function and save
+days_at_risk_per_patient = compute_days_at_risk_2(
+    df=trends,
+    start_date_str=Project.study_start_date,
+    end_date_str="2026-12-31",
+    cov_hx_col="cov_hx_first_obesity_date",
+    death_col="date_of_death",
+    date90_col="date_100",
+    date18_col="date_18",
+    gdppr_col="gdppr_earliest",
+    dob_col="date_of_birth"
+)
+
+days_at_risk_per_patient_30kgm2 = compute_days_at_risk_2(
+    df=trends_30kgm2,
+    start_date_str=Project.study_start_date,
+    end_date_str="2026-12-31",
+    cov_hx_col="cov_hx_first_obesity_date",
+    death_col="date_of_death",
+    date90_col="date_100",
+    date18_col="date_18",
+    gdppr_col="gdppr_earliest",
+    dob_col="date_of_birth"
+)
+
+days_at_risk_per_patient_preg = compute_days_at_risk_2(
+    df=trends_preg_table,
+    start_date_str=Project.study_start_date,
+    end_date_str="2026-12-31",
+    cov_hx_col="cov_hx_first_obesity_date",
+    death_col="date_of_death",
+    date90_col="date_100",
+    date18_col="entry_date", # Changing this as duplicates will have same date_18
+    gdppr_col="gdppr_earliest",
+    dob_col="date_of_birth"
+)
+
+temp_save(df=days_at_risk_per_patient,        out_name=f'{Project.name}_tmp_days_at_risk_per_patient')
+temp_save(df=days_at_risk_per_patient_30kgm2, out_name=f'{Project.name}_tmp_days_at_risk_per_patient_30kgm2')
+temp_save(df=days_at_risk_per_patient_preg, out_name=f'{Project.name}_tmp_days_at_risk_per_patient_pregnancy')
+
+# COMMAND ----------
+
+# DBTITLE 1,Days at risk for sensitivity analysis
+days_at_risk_per_patient_30kgm2_182 = compute_days_at_risk_2(
+    df=trends_30kgm2_182, start_date_str=Project.study_start_date,
+    end_date_str="2026-12-31", cov_hx_col="cov_hx_first_obesity_date",
+    death_col="date_of_death", date90_col="date_100",
+    date18_col="date_18", gdppr_col="gdppr_earliest", dob_col="date_of_birth"
+)
+
+days_at_risk_per_patient_30kgm2_365 = compute_days_at_risk_2(
+    df=trends_30kgm2_365, start_date_str=Project.study_start_date,
+    end_date_str="2026-12-31", cov_hx_col="cov_hx_first_obesity_date",
+    death_col="date_of_death", date90_col="date_100",
+    date18_col="date_18", gdppr_col="gdppr_earliest", dob_col="date_of_birth"
+)
+
+days_at_risk_per_patient_30kgm2_730 = compute_days_at_risk_2(
+    df=trends_30kgm2_730, start_date_str=Project.study_start_date,
+    end_date_str="2026-12-31", cov_hx_col="cov_hx_first_obesity_date",
+    death_col="date_of_death", date90_col="date_100",
+    date18_col="date_18", gdppr_col="gdppr_earliest", dob_col="date_of_birth"
+)
+
+days_at_risk_per_patient_30kgm2_1095 = compute_days_at_risk_2(
+    df=trends_30kgm2_1095, start_date_str=Project.study_start_date,
+    end_date_str="2026-12-31", cov_hx_col="cov_hx_first_obesity_date",
+    death_col="date_of_death", date90_col="date_100",
+    date18_col="date_18", gdppr_col="gdppr_earliest", dob_col="date_of_birth"
+)
+
+days_at_risk_per_patient_30kgm2_1460 = compute_days_at_risk_2(
+    df=trends_30kgm2_1460, start_date_str=Project.study_start_date,
+    end_date_str="2026-12-31", cov_hx_col="cov_hx_first_obesity_date",
+    death_col="date_of_death", date90_col="date_100",
+    date18_col="date_18", gdppr_col="gdppr_earliest", dob_col="date_of_birth"
+)
+
+days_at_risk_per_patient_30kgm2_1825 = compute_days_at_risk_2(
+    df=trends_30kgm2_1825, start_date_str=Project.study_start_date,
+    end_date_str="2026-12-31", cov_hx_col="cov_hx_first_obesity_date",
+    death_col="date_of_death", date90_col="date_100",
+    date18_col="date_18", gdppr_col="gdppr_earliest", dob_col="date_of_birth"
+)
+
+temp_save(df=days_at_risk_per_patient_30kgm2_182, out_name=f'{Project.name}_tmp_days_at_risk_per_patient_30kgm2_182')
+temp_save(df=days_at_risk_per_patient_30kgm2_365, out_name=f'{Project.name}_tmp_days_at_risk_per_patient_30kgm2_365')
+temp_save(df=days_at_risk_per_patient_30kgm2_730, out_name=f'{Project.name}_tmp_days_at_risk_per_patient_30kgm2_730')
+temp_save(df=days_at_risk_per_patient_30kgm2_1095, out_name=f'{Project.name}_tmp_days_at_risk_per_patient_30kgm2_1095')
+temp_save(df=days_at_risk_per_patient_30kgm2_1460, out_name=f'{Project.name}_tmp_days_at_risk_per_patient_30kgm2_1460')
+temp_save(df=days_at_risk_per_patient_30kgm2_1825, out_name=f'{Project.name}_tmp_days_at_risk_per_patient_30kgm2_1825')
+
+# COMMAND ----------
+
+# DBTITLE 1,Reload
+days_at_risk_per_patient        = spark.table(f'{Project.dsa}.{Project.name}_tmp_days_at_risk_per_patient')
+days_at_risk_per_patient_30kgm2 = spark.table(f'{Project.dsa}.{Project.name}_tmp_days_at_risk_per_patient_30kgm2')
+days_at_risk_per_patient_preg   = spark.table(f'{Project.dsa}.{Project.name}_tmp_days_at_risk_per_patient_pregnancy')
+
+# COMMAND ----------
+
+# DBTITLE 1,Reload sensitivity analysis
+days_at_risk_per_patient_30kgm2_182 = spark.table(f'{Project.dsa}.{Project.name}_tmp_days_at_risk_per_patient_30kgm2_182')
+days_at_risk_per_patient_30kgm2_365 = spark.table(f'{Project.dsa}.{Project.name}_tmp_days_at_risk_per_patient_30kgm2_365')
+days_at_risk_per_patient_30kgm2_730 = spark.table(f'{Project.dsa}.{Project.name}_tmp_days_at_risk_per_patient_30kgm2_730')
+days_at_risk_per_patient_30kgm2_1095 = spark.table(f'{Project.dsa}.{Project.name}_tmp_days_at_risk_per_patient_30kgm2_1095')
+days_at_risk_per_patient_30kgm2_1460 = spark.table(f'{Project.dsa}.{Project.name}_tmp_days_at_risk_per_patient_30kgm2_1460')
+days_at_risk_per_patient_30kgm2_1825 = spark.table(f'{Project.dsa}.{Project.name}_tmp_days_at_risk_per_patient_30kgm2_1825')
+
+# COMMAND ----------
+
+# MAGIC %md # 6. Compute incidence numerator (number of events)
+
+# COMMAND ----------
+
+# DBTITLE 1,Crude numerator
+# Get numerators
+# numerator_all   = compute_incidence_numerator_crude(df=trends, end_date_str = "2025-12-31", by_col=None)
+# numerator_sex   = compute_incidence_numerator_crude(df=trends, end_date_str = "2025-12-31", by_col="sex")
+# numerator_eth5  = compute_incidence_numerator_crude(df=trends, end_date_str = "2025-12-31", by_col="ethnicity_5_recoded")
+# numerator_eth18 = compute_incidence_numerator_crude(df=trends, end_date_str = "2025-12-31", by_col="ethnicity_18_recoded")
+# numerator_imd   = compute_incidence_numerator_crude(df=trends, end_date_str = "2025-12-31", by_col="imd_quintile")
+# numerator_imd10 = compute_incidence_numerator_crude(df=trends, end_date_str = "2025-12-31", by_col="imd_decile")
+# numerator_reg   = compute_incidence_numerator_crude(df=trends, end_date_str = "2025-12-31", by_col="region_recoded")
+# numerator_lacd  = compute_incidence_numerator_crude(df=trends, end_date_str = "2025-12-31", by_col="LACCD")
+# numerator_lacl  = compute_incidence_numerator_crude(df=trends, end_date_str = "2025-12-31", by_col="LACLASS")
+# numerator_msoa  = compute_incidence_numerator_crude(df=trends, end_date_str = "2025-12-31", by_col="msoa")
+numerator_comb1 = compute_incidence_numerator_crude(df=trends, end_date_str = "2026-12-31", by_col="combined_1lvl")
+# numerator_comb2 = compute_incidence_numerator_crude(df=trends, end_date_str = "2025-12-31", by_col="combined_2lvl")
+# numerator_comb3 = compute_incidence_numerator_crude(df=trends, end_date_str = "2025-12-31", by_col="combined_3lvl")
+
+# numerator_all_30kgm2   = compute_incidence_numerator_crude(df=trends_30kgm2, end_date_str = "2025-12-31", by_col=None)
+# numerator_sex_30kgm2   = compute_incidence_numerator_crude(df=trends_30kgm2, end_date_str = "2025-12-31", by_col="sex")
+# numerator_eth5_30kgm2  = compute_incidence_numerator_crude(df=trends_30kgm2, end_date_str = "2025-12-31", by_col="ethnicity_5_recoded")
+# numerator_eth18_30kgm2 = compute_incidence_numerator_crude(df=trends_30kgm2, end_date_str = "2025-12-31", by_col="ethnicity_18_recoded")
+# numerator_imd_30kgm2   = compute_incidence_numerator_crude(df=trends_30kgm2, end_date_str = "2025-12-31", by_col="imd_quintile")
+# numerator_imd10_30kgm2 = compute_incidence_numerator_crude(df=trends_30kgm2, end_date_str = "2025-12-31", by_col="imd_decile")
+# numerator_reg_30kgm2   = compute_incidence_numerator_crude(df=trends_30kgm2, end_date_str = "2025-12-31", by_col="region_recoded")
+# numerator_lacd_30kgm2  = compute_incidence_numerator_crude(df=trends_30kgm2, end_date_str = "2025-12-31", by_col="LACCD")
+# numerator_lacl_30kgm2  = compute_incidence_numerator_crude(df=trends_30kgm2, end_date_str = "2025-12-31", by_col="LACLASS")
+# numerator_msoa_30kgm2  = compute_incidence_numerator_crude(df=trends_30kgm2, end_date_str = "2025-12-31", by_col="msoa")
+numerator_comb1_30kgm2 = compute_incidence_numerator_crude(df=trends_30kgm2, end_date_str = "2026-12-31", by_col="combined_1lvl")
+# numerator_comb2_30kgm2 = compute_incidence_numerator_crude(df=trends_30kgm2, end_date_str = "2025-12-31", by_col="combined_2lvl")
+# numerator_comb3_30kgm2 = compute_incidence_numerator_crude(df=trends_30kgm2, end_date_str = "2025-12-31", by_col="combined_3lvl")
+
+# Save
+# temp_save(df=numerator_all, out_name=f'{Project.name}_tmp_incidence_numerator_all')
+# temp_save(df=numerator_sex, out_name=f'{Project.name}_tmp_incidence_numerator_sex')
+# temp_save(df=numerator_eth5, out_name=f'{Project.name}_tmp_incidence_numerator_eth5')
+# temp_save(df=numerator_eth18, out_name=f'{Project.name}_tmp_incidence_numerator_eth18')
+# temp_save(df=numerator_imd, out_name=f'{Project.name}_tmp_incidence_numerator_imd')
+# temp_save(df=numerator_imd10, out_name=f'{Project.name}_tmp_incidence_numerator_imd10')
+# temp_save(df=numerator_reg, out_name=f'{Project.name}_tmp_incidence_numerator_reg')
+# temp_save(df=numerator_lacd, out_name=f'{Project.name}_tmp_incidence_numerator_lacd')
+# temp_save(df=numerator_lacl, out_name=f'{Project.name}_tmp_incidence_numerator_lacl')
+# temp_save(df=numerator_msoa, out_name=f'{Project.name}_tmp_incidence_numerator_msoa')
+temp_save(df=numerator_comb1, out_name=f'{Project.name}_tmp_incidence_numerator_comb1')
+# temp_save(df=numerator_comb2, out_name=f'{Project.name}_tmp_incidence_numerator_comb2')
+# temp_save(df=numerator_comb3, out_name=f'{Project.name}_tmp_incidence_numerator_comb3')
+
+# temp_save(df=numerator_all_30kgm2, out_name=f'{Project.name}_tmp_incidence_numerator_all_30kgm2')
+# temp_save(df=numerator_sex_30kgm2, out_name=f'{Project.name}_tmp_incidence_numerator_sex_30kgm2')
+# temp_save(df=numerator_eth5_30kgm2, out_name=f'{Project.name}_tmp_incidence_numerator_eth5_30kgm2')
+# temp_save(df=numerator_eth18_30kgm2, out_name=f'{Project.name}_tmp_incidence_numerator_eth18_30kgm2')
+# temp_save(df=numerator_imd_30kgm2, out_name=f'{Project.name}_tmp_incidence_numerator_imd_30kgm2')
+# temp_save(df=numerator_imd10_30kgm2, out_name=f'{Project.name}_tmp_incidence_numerator_imd10_30kgm2')
+# temp_save(df=numerator_reg_30kgm2, out_name=f'{Project.name}_tmp_incidence_numerator_reg_30kgm2')
+# temp_save(df=numerator_lacd_30kgm2, out_name=f'{Project.name}_tmp_incidence_numerator_lacd_30kgm2')
+# temp_save(df=numerator_lacl_30kgm2, out_name=f'{Project.name}_tmp_incidence_numerator_lacl_30kgm2')
+# temp_save(df=numerator_msoa_30kgm2, out_name=f'{Project.name}_tmp_incidence_numerator_msoa_30kgm2')
+temp_save(df=numerator_comb1_30kgm2, out_name=f'{Project.name}_tmp_incidence_numerator_comb1_30kgm2')
+# temp_save(df=numerator_comb2_30kgm2, out_name=f'{Project.name}_tmp_incidence_numerator_comb2_30kgm2')
+# temp_save(df=numerator_comb3_30kgm2, out_name=f'{Project.name}_tmp_incidence_numerator_comb3_30kgm2')
+
+# COMMAND ----------
+
+display(trends_preg_table)
+
+# COMMAND ----------
+
+# DBTITLE 1,Standardised numerator
+# Get numerators
+numerator_all_std   = compute_incidence_numerator_standardised(df=trends, end_date_str = "2026-12-31", by_col=None)
+# numerator_sex_std   = compute_incidence_numerator_standardised(df=trends, end_date_str = "2025-12-31", by_col="sex")
+numerator_eth5_std  = compute_incidence_numerator_standardised(df=trends, end_date_str = "2026-12-31", by_col="ethnicity_5_recoded")
+# numerator_eth18_std = compute_incidence_numerator_standardised(df=trends, end_date_str = "2025-12-31", by_col="ethnicity_18_recoded")
+numerator_imd_std   = compute_incidence_numerator_standardised(df=trends, end_date_str = "2026-12-31", by_col="imd_quintile")
+# numerator_imd10_std   = compute_incidence_numerator_standardised(df=trends, end_date_str = "2025-12-31", by_col="imd_decile")
+# numerator_reg_std   = compute_incidence_numerator_standardised(df=trends, end_date_str = "2025-12-31", by_col="region_recoded")
+# numerator_lacd_std  = compute_incidence_numerator_standardised(df=trends, end_date_str = "2025-12-31", by_col="LACCD")
+# numerator_lacl_std  = compute_incidence_numerator_standardised(df=trends, end_date_str = "2025-12-31", by_col="LACLASS")
+numerator_comb1_std  = compute_incidence_numerator_standardised(df=trends, end_date_str = "2026-12-31", by_col="combined_1lvl")
+# numerator_comb2_std  = compute_incidence_numerator_standardised(df=trends, end_date_str = "2025-12-31", by_col="combined_2lvl")
+# numerator_comb3_std  = compute_incidence_numerator_standardised(df=trends, end_date_str = "2025-12-31", by_col="combined_3lvl")
+# numerator_msoa_std   = compute_incidence_numerator_standardised(df=trends, end_date_str = "2025-12-31", by_col="msoa")
+
+numerator_all_30kgm2_std   = compute_incidence_numerator_standardised(df=trends_30kgm2, end_date_str = "2026-12-31", by_col=None)
+# numerator_sex_30kgm2_std   = compute_incidence_numerator_standardised(df=trends_30kgm2, end_date_str = "2025-12-31", by_col="sex")
+numerator_eth5_30kgm2_std  = compute_incidence_numerator_standardised(df=trends_30kgm2, end_date_str = "2026-12-31", by_col="ethnicity_5_recoded")
+# numerator_eth18_30kgm2_std = compute_incidence_numerator_standardised(df=trends_30kgm2, end_date_str = "2025-12-31", by_col="ethnicity_18_recoded")
+numerator_imd_30kgm2_std   = compute_incidence_numerator_standardised(df=trends_30kgm2, end_date_str = "2026-12-31", by_col="imd_quintile")
+# numerator_imd10_30kgm2_std = compute_incidence_numerator_standardised(df=trends_30kgm2, end_date_str = "2025-12-31", by_col="imd_decile")
+# numerator_reg_30kgm2_std   = compute_incidence_numerator_standardised(df=trends_30kgm2, end_date_str = "2025-12-31", by_col="region_recoded")
+# numerator_lacd_30kgm2_std  = compute_incidence_numerator_standardised(df=trends_30kgm2, end_date_str = "2025-12-31", by_col="LACCD")
+# numerator_lacl_30kgm2_std  = compute_incidence_numerator_standardised(df=trends_30kgm2, end_date_str = "2025-12-31", by_col="LACLASS")
+numerator_comb1_30kgm2_std  = compute_incidence_numerator_standardised(df=trends_30kgm2, end_date_str = "2026-12-31", by_col="combined_1lvl")
+numerator_comb1_18grp_30kgm2_std  = compute_incidence_numerator_standardised(df=trends_30kgm2, end_date_str = "2026-12-31", by_col="combined_1lvl_18grp")
+# numerator_comb2_30kgm2_std  = compute_incidence_numerator_standardised(df=trends_30kgm2, end_date_str = "2025-12-31", by_col="combined_2lvl")
+# numerator_comb3_30kgm2_std  = compute_incidence_numerator_standardised(df=trends_30kgm2, end_date_str = "2025-12-31", by_col="combined_3lvl")
+# numerator_msoa_30kgm2_std  = compute_incidence_numerator_standardised(df=trends_30kgm2, end_date_str = "2025-12-31", by_col="msoa")
+
+# Pregnancy analysis
+numerator_comb1_preg_std  = compute_incidence_numerator_standardised(df=trends_preg_table, end_date_str = "2026-12-31", by_col="combined_1lvl")
+
+# Save
+temp_save(df=numerator_all_std, out_name=f'{Project.name}_tmp_incidence_numerator_all_std')
+# temp_save(df=numerator_sex_std, out_name=f'{Project.name}_tmp_incidence_numerator_sex_std')
+temp_save(df=numerator_eth5_std, out_name=f'{Project.name}_tmp_incidence_numerator_eth5_std')
+# temp_save(df=numerator_eth18_std, out_name=f'{Project.name}_tmp_incidence_numerator_eth18_std')
+temp_save(df=numerator_imd_std, out_name=f'{Project.name}_tmp_incidence_numerator_imd_std')
+# temp_save(df=numerator_imd10_std, out_name=f'{Project.name}_tmp_incidence_numerator_imd10_std')
+# temp_save(df=numerator_reg_std, out_name=f'{Project.name}_tmp_incidence_numerator_reg_std')
+# temp_save(df=numerator_lacd_std, out_name=f'{Project.name}_tmp_incidence_numerator_lacd_std')
+# temp_save(df=numerator_lacl_std, out_name=f'{Project.name}_tmp_incidence_numerator_lacl_std')
+temp_save(df=numerator_comb1_std, out_name=f'{Project.name}_tmp_incidence_numerator_comb1_std')
+# temp_save(df=numerator_comb2_std, out_name=f'{Project.name}_tmp_incidence_numerator_comb2_std')
+# temp_save(df=numerator_comb3_std, out_name=f'{Project.name}_tmp_incidence_numerator_comb3_std')
+
+# temp_save(df=numerator_msoa_std, out_name=f'{Project.name}_tmp_incidence_numerator_msoa_std')
+
+temp_save(df=numerator_all_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_numerator_all_30kgm2_std')
+# temp_save(df=numerator_sex_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_numerator_sex_30kgm2_std')
+temp_save(df=numerator_eth5_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_numerator_eth5_30kgm2_std')
+# temp_save(df=numerator_eth18_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_numerator_eth18_30kgm2_std')
+temp_save(df=numerator_imd_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_numerator_imd_30kgm2_std')
+# temp_save(df=numerator_imd10_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_numerator_imd10_30kgm2_std')
+# temp_save(df=numerator_reg_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_numerator_reg_30kgm2_std')
+# temp_save(df=numerator_lacd_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_numerator_lacd_30kgm2_std')
+# temp_save(df=numerator_lacl_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_numerator_lacl_30kgm2_std')
+temp_save(df=numerator_comb1_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_numerator_comb1_30kgm2_std')
+temp_save(df=numerator_comb1_18grp_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_numerator_comb1_18grp_30kgm2_std')
+# temp_save(df=numerator_comb2_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_numerator_comb2_30kgm2_std')
+# temp_save(df=numerator_comb3_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_numerator_comb3_30kgm2_std')
+# temp_save(df=numerator_msoa_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_numerator_msoa_30kgm2_std')
+
+temp_save(df=numerator_comb1_preg_std, out_name=f'{Project.name}_tmp_incidence_numerator_comb1_preg_std')
+
+# COMMAND ----------
+
+# DBTITLE 1,Sensitivity analysis numerator (standardised)
+numerator_comb1_30kgm2_182_std = compute_incidence_numerator_standardised(df=trends_30kgm2_182, end_date_str = "2026-12-31", by_col="combined_1lvl")
+numerator_comb1_30kgm2_365_std = compute_incidence_numerator_standardised(df=trends_30kgm2_365, end_date_str = "2026-12-31", by_col="combined_1lvl")
+numerator_comb1_30kgm2_730_std = compute_incidence_numerator_standardised(df=trends_30kgm2_730, end_date_str = "2026-12-31", by_col="combined_1lvl")
+numerator_comb1_30kgm2_1095_std = compute_incidence_numerator_standardised(df=trends_30kgm2_1095, end_date_str = "2026-12-31", by_col="combined_1lvl")
+numerator_comb1_30kgm2_1460_std = compute_incidence_numerator_standardised(df=trends_30kgm2_1460, end_date_str = "2026-12-31", by_col="combined_1lvl")
+numerator_comb1_30kgm2_1825_std = compute_incidence_numerator_standardised(df=trends_30kgm2_1825, end_date_str = "2026-12-31", by_col="combined_1lvl")
+
+temp_save(df=numerator_comb1_30kgm2_182_std, out_name=f'{Project.name}_tmp_incidence_numerator_comb1_30kgm2_182_std')
+temp_save(df=numerator_comb1_30kgm2_365_std, out_name=f'{Project.name}_tmp_incidence_numerator_comb1_30kgm2_365_std')
+temp_save(df=numerator_comb1_30kgm2_730_std, out_name=f'{Project.name}_tmp_incidence_numerator_comb1_30kgm2_730_std')
+temp_save(df=numerator_comb1_30kgm2_1095_std, out_name=f'{Project.name}_tmp_incidence_numerator_comb1_30kgm2_1095_std')
+temp_save(df=numerator_comb1_30kgm2_1460_std, out_name=f'{Project.name}_tmp_incidence_numerator_comb1_30kgm2_1460_std')
+temp_save(df=numerator_comb1_30kgm2_1825_std, out_name=f'{Project.name}_tmp_incidence_numerator_comb1_30kgm2_1825_std')
+
+# COMMAND ----------
+
+# MAGIC %md # 7. Compute incidence denominator (days at risk)
+
+# COMMAND ----------
+
+# DBTITLE 1,Crude denominator
+# Compute denominator
+# denominator_all   = compute_incidence_denominator_crude(days_at_risk_per_patient)
+# denominator_sex   = compute_incidence_denominator_crude(days_at_risk_per_patient, by="sex")
+# denominator_eth5  = compute_incidence_denominator_crude(days_at_risk_per_patient, by="ethnicity_5_recoded")
+# denominator_eth18 = compute_incidence_denominator_crude(days_at_risk_per_patient, by="ethnicity_18_recoded")
+# denominator_imd   = compute_incidence_denominator_crude(days_at_risk_per_patient, by="imd_quintile")
+# denominator_imd10 = compute_incidence_denominator_crude(days_at_risk_per_patient, by="imd_decile")
+# denominator_reg   = compute_incidence_denominator_crude(days_at_risk_per_patient, by="region_recoded")
+# denominator_lacd  = compute_incidence_denominator_crude(days_at_risk_per_patient, by="LACCD")
+# denominator_lacl  = compute_incidence_denominator_crude(days_at_risk_per_patient, by="LACLASS")
+# denominator_msoa  = compute_incidence_denominator_by_year_pivoted(days_at_risk_per_patient, by="msoa")
+denominator_comb1 = compute_incidence_denominator_crude(days_at_risk_per_patient, by="combined_1lvl")
+# denominator_comb2 = compute_incidence_denominator_crude(days_at_risk_per_patient, by="combined_2lvl")
+# denominator_comb3 = compute_incidence_denominator_crude(days_at_risk_per_patient, by="combined_3lvl")
+
+# denominator_all_30kgm2   = compute_incidence_denominator_crude(days_at_risk_per_patient_30kgm2)
+# denominator_sex_30kgm2   = compute_incidence_denominator_crude(days_at_risk_per_patient_30kgm2, by="sex")
+# denominator_eth5_30kgm2  = compute_incidence_denominator_crude(days_at_risk_per_patient_30kgm2, by="ethnicity_5_recoded")
+# denominator_eth18_30kgm2 = compute_incidence_denominator_crude(days_at_risk_per_patient_30kgm2, by="ethnicity_18_recoded")
+# denominator_imd_30kgm2   = compute_incidence_denominator_crude(days_at_risk_per_patient_30kgm2, by="imd_quintile")
+# denominator_imd10_30kgm2 = compute_incidence_denominator_crude(days_at_risk_per_patient_30kgm2, by="imd_decile")
+# denominator_reg_30kgm2   = compute_incidence_denominator_crude(days_at_risk_per_patient_30kgm2, by="region_recoded")
+# denominator_lacd_30kgm2  = compute_incidence_denominator_crude(days_at_risk_per_patient_30kgm2, by="LACCD")
+# denominator_lacl_30kgm2  = compute_incidence_denominator_crude(days_at_risk_per_patient_30kgm2, by="LACLASS")
+# denominator_msoa_30kgm2  = compute_incidence_denominator_by_year_pivoted(days_at_risk_per_patient_30kgm2, by="msoa")
+denominator_comb1_30kgm2 = compute_incidence_denominator_crude(days_at_risk_per_patient_30kgm2, by="combined_1lvl")
+#***REMOVED***denominator_comb2_30kgm2 = compute_incidence_denominator_crude(days_at_risk_per_patient_30kgm2, by="combined_2lvl")
+# denominator_comb3_30kgm2 = compute_incidence_denominator_crude(days_at_risk_per_patient_30kgm2, by="combined_3lvl")
+
+# Save
+# temp_save(df=denominator_all, out_name=f'{Project.name}_tmp_incidence_denominator_all')
+# temp_save(df=denominator_sex, out_name=f'{Project.name}_tmp_incidence_denominator_sex')
+# temp_save(df=denominator_eth5, out_name=f'{Project.name}_tmp_incidence_denominator_eth5')
+# temp_save(df=denominator_eth18, out_name=f'{Project.name}_tmp_incidence_denominator_eth18')
+# temp_save(df=denominator_imd, out_name=f'{Project.name}_tmp_incidence_denominator_imd')
+# temp_save(df=denominator_imd10, out_name=f'{Project.name}_tmp_incidence_denominator_imd10')
+# temp_save(df=denominator_reg, out_name=f'{Project.name}_tmp_incidence_denominator_reg')
+# temp_save(df=denominator_lacd, out_name=f'{Project.name}_tmp_incidence_denominator_lacd')
+# temp_save(df=denominator_lacl, out_name=f'{Project.name}_tmp_incidence_denominator_lacl')
+# temp_save(df=denominator_msoa, out_name=f'{Project.name}_tmp_incidence_denominator_msoa')
+temp_save(df=denominator_comb1, out_name=f'{Project.name}_tmp_incidence_denominator_comb1')
+#***REMOVED***temp_save(df=denominator_comb2, out_name=f'{Project.name}_tmp_incidence_denominator_comb2')
+# temp_save(df=denominator_comb3, out_name=f'{Project.name}_tmp_incidence_denominator_comb3')
+
+# temp_save(df=denominator_all_30kgm2, out_name=f'{Project.name}_tmp_incidence_denominator_all_30kgm2')
+# temp_save(df=denominator_sex_30kgm2, out_name=f'{Project.name}_tmp_incidence_denominator_sex_30kgm2')
+# temp_save(df=denominator_eth5_30kgm2, out_name=f'{Project.name}_tmp_incidence_denominator_eth5_30kgm2')
+# temp_save(df=denominator_eth18_30kgm2, out_name=f'{Project.name}_tmp_incidence_denominator_eth18_30kgm2')
+# temp_save(df=denominator_imd_30kgm2, out_name=f'{Project.name}_tmp_incidence_denominator_imd_30kgm2')
+# temp_save(df=denominator_imd10_30kgm2, out_name=f'{Project.name}_tmp_incidence_denominator_imd10_30kgm2')
+# temp_save(df=denominator_reg_30kgm2, out_name=f'{Project.name}_tmp_incidence_denominator_reg_30kgm2')
+# temp_save(df=denominator_lacd_30kgm2, out_name=f'{Project.name}_tmp_incidence_denominator_lacd_30kgm2')
+# temp_save(df=denominator_lacl_30kgm2, out_name=f'{Project.name}_tmp_incidence_denominator_lacl_30kgm2')
+# temp_save(df=denominator_msoa_30kgm2, out_name=f'{Project.name}_tmp_incidence_denominator_msoa_30kgm2')
+temp_save(df=denominator_comb1_30kgm2, out_name=f'{Project.name}_tmp_incidence_denominator_comb1_30kgm2')
+#***REMOVED***temp_save(df=denominator_comb2_30kgm2, out_name=f'{Project.name}_tmp_incidence_denominator_comb2_30kgm2')
+#***REMOVED***temp_save(df=denominator_comb3_30kgm2, out_name=f'{Project.name}_tmp_incidence_denominator_comb3_30kgm2')
+
+# COMMAND ----------
+
+# DBTITLE 1,Standardised denominator
+# Compute denominator
+denominator_all_std   = compute_incidence_denominator_standardised(days_at_risk_per_patient)
+#***REMOVED***denominator_sex_std   = compute_incidence_denominator_standardised(days_at_risk_per_patient, by="sex")
+denominator_eth5_std  = compute_incidence_denominator_standardised(days_at_risk_per_patient, by="ethnicity_5_recoded")
+# denominator_eth18_std = compute_incidence_denominator_standardised(days_at_risk_per_patient, by="ethnicity_18_recoded")
+denominator_imd_std   = compute_incidence_denominator_standardised(days_at_risk_per_patient, by="imd_quintile")
+# denominator_imd10_std = compute_incidence_denominator_standardised(days_at_risk_per_patient, by="imd_decile")
+# denominator_reg_std   = compute_incidence_denominator_standardised(days_at_risk_per_patient, by="region_recoded")
+# denominator_lacd_std  = compute_incidence_denominator_standardised(days_at_risk_per_patient, by="LACCD")
+# denominator_lacl_std  = compute_incidence_denominator_standardised(days_at_risk_per_patient, by="LACLASS")
+denominator_comb1_std = compute_incidence_denominator_standardised(days_at_risk_per_patient, by="combined_1lvl")
+#***REMOVED***denominator_comb2_std = compute_incidence_denominator_standardised(days_at_risk_per_patient, by="combined_2lvl")
+# denominator_comb3_std = compute_incidence_denominator_standardised(days_at_risk_per_patient, by="combined_3lvl")
+#***REMOVED***denominator_msoa  = compute_incidence_denominator_by_year_pivoted(days_at_risk_per_patient, by="msoa")
+
+denominator_all_30kgm2_std   = compute_incidence_denominator_standardised(days_at_risk_per_patient_30kgm2)
+# #***REMOVED***denominator_sex_30kgm2   = compute_incidence_denominator_standardised(days_at_risk_per_patient_30kgm2, by="sex")
+denominator_eth5_30kgm2_std  = compute_incidence_denominator_standardised(days_at_risk_per_patient_30kgm2, by="ethnicity_5_recoded")
+# denominator_eth18_30kgm2_std = compute_incidence_denominator_standardised(days_at_risk_per_patient_30kgm2, by="ethnicity_18_recoded")
+denominator_imd_30kgm2_std   = compute_incidence_denominator_standardised(days_at_risk_per_patient_30kgm2, by="imd_quintile")
+# denominator_imd10_30kgm2_std = compute_incidence_denominator_standardised(days_at_risk_per_patient_30kgm2, by="imd_decile")
+# denominator_reg_30kgm2_std   = compute_incidence_denominator_standardised(days_at_risk_per_patient_30kgm2, by="region_recoded")
+# denominator_lacd_30kgm2_std  = compute_incidence_denominator_standardised(days_at_risk_per_patient_30kgm2, by="LACCD")
+# denominator_lacl_30kgm2_std  = compute_incidence_denominator_standardised(days_at_risk_per_patient_30kgm2, by="LACLASS")
+denominator_comb1_30kgm2_std = compute_incidence_denominator_standardised(days_at_risk_per_patient_30kgm2, by="combined_1lvl")
+denominator_comb1_18grp_30kgm2_std = compute_incidence_denominator_standardised(days_at_risk_per_patient_30kgm2, by="combined_1lvl_18grp")
+#***REMOVED***denominator_comb2_30kgm2_std = compute_incidence_denominator_standardised(days_at_risk_per_patient_30kgm2, by="combined_2lvl")
+# denominator_comb3_30kgm2_std = compute_incidence_denominator_standardised(days_at_risk_per_patient_30kgm2, by="combined_3lvl")
+#***REMOVED***denominator_msoa_30kgm2  = compute_incidence_denominator_by_year_pivoted(days_at_risk_per_patient_30kgm2, by="msoa")
+
+# Pregnancy analysis
+denominator_comb1_preg_std = compute_incidence_denominator_standardised(days_at_risk_per_patient_preg, by="combined_1lvl")
+
+# Save
+temp_save(df=denominator_all_std, out_name=f'{Project.name}_tmp_incidence_denominator_all_std')
+# #***REMOVED***temp_save(df=denominator_sex, out_name=f'{Project.name}_tmp_incidence_denominator_sex')
+temp_save(df=denominator_eth5_std, out_name=f'{Project.name}_tmp_incidence_denominator_eth5_std')
+# temp_save(df=denominator_eth18_std, out_name=f'{Project.name}_tmp_incidence_denominator_eth18_std')
+#temp_save(df=denominator_imd_std, out_name=f'{Project.name}_tmp_incidence_denominator_imd_std')
+# temp_save(df=denominator_imd10_std, out_name=f'{Project.name}_tmp_incidence_denominator_imd10_std')
+# temp_save(df=denominator_reg_std, out_name=f'{Project.name}_tmp_incidence_denominator_reg_std')
+# temp_save(df=denominator_lacd_std, out_name=f'{Project.name}_tmp_incidence_denominator_lacd_std')
+# temp_save(df=denominator_lacl_std, out_name=f'{Project.name}_tmp_incidence_denominator_lacl_std')
+temp_save(df=denominator_comb1_std, out_name=f'{Project.name}_tmp_incidence_denominator_comb1_std')
+#***REMOVED***temp_save(df=denominator_comb2_std, out_name=f'{Project.name}_tmp_incidence_denominator_comb2_std')
+#***REMOVED***temp_save(df=denominator_comb3_std, out_name=f'{Project.name}_tmp_incidence_denominator_comb3_std')
+
+# temp_save(df=denominator_msoa, out_name=f'{Project.name}_tmp_incidence_denominator_msoa')
+
+temp_save(df=denominator_all_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_denominator_all_30kgm2_std')
+# # temp_save(df=denominator_sex_30kgm2, out_name=f'{Project.name}_tmp_incidence_denominator_sex_30kgm2')
+temp_save(df=denominator_eth5_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_denominator_eth5_30kgm2_std')
+# temp_save(df=denominator_eth18_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_denominator_eth18_30kgm2_std')
+temp_save(df=denominator_imd_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_denominator_imd_30kgm2_std')
+# temp_save(df=denominator_imd10_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_denominator_imd10_30kgm2_std')
+# temp_save(df=denominator_reg_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_denominator_reg_30kgm2_std')
+# temp_save(df=denominator_lacd_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_denominator_lacd_30kgm2_std')
+# temp_save(df=denominator_lacl_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_denominator_lacl_30kgm2_std')
+temp_save(df=denominator_comb1_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_denominator_comb1_30kgm2_std')
+temp_save(df=denominator_comb1_18grp_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_denominator_comb1_18grp_30kgm2_std')
+#***REMOVED***temp_save(df=denominator_comb2_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_denominator_comb2_30kgm2_std')
+#***REMOVED***temp_save(df=denominator_comb3_30kgm2_std, out_name=f'{Project.name}_tmp_incidence_denominator_comb3_30kgm2_std')
+#***REMOVED***temp_save(df=denominator_msoa_30kgm2, out_name=f'{Project.name}_tmp_incidence_denominator_msoa_30kgm2')
+
+temp_save(df=denominator_comb1_preg_std, out_name=f'{Project.name}_tmp_incidence_denominator_comb1_preg_std')
+
+# COMMAND ----------
+
+denominator_comb1_30kgm2_182_std = compute_incidence_denominator_standardised(days_at_risk_per_patient_30kgm2_182, by="combined_1lvl")
+denominator_comb1_30kgm2_365_std = compute_incidence_denominator_standardised(days_at_risk_per_patient_30kgm2_365, by="combined_1lvl")
+denominator_comb1_30kgm2_730_std = compute_incidence_denominator_standardised(days_at_risk_per_patient_30kgm2_730, by="combined_1lvl")
+denominator_comb1_30kgm2_1095_std = compute_incidence_denominator_standardised(days_at_risk_per_patient_30kgm2_1095, by="combined_1lvl")
+denominator_comb1_30kgm2_1460_std = compute_incidence_denominator_standardised(days_at_risk_per_patient_30kgm2_1460, by="combined_1lvl")
+denominator_comb1_30kgm2_1825_std = compute_incidence_denominator_standardised(days_at_risk_per_patient_30kgm2_1825, by="combined_1lvl")
+
+temp_save(df=denominator_comb1_30kgm2_182_std, out_name=f'{Project.name}_tmp_incidence_denominator_comb1_30kgm2_182_std')
+temp_save(df=denominator_comb1_30kgm2_365_std, out_name=f'{Project.name}_tmp_incidence_denominator_comb1_30kgm2_365_std')
+temp_save(df=denominator_comb1_30kgm2_730_std, out_name=f'{Project.name}_tmp_incidence_denominator_comb1_30kgm2_730_std')
+temp_save(df=denominator_comb1_30kgm2_1095_std, out_name=f'{Project.name}_tmp_incidence_denominator_comb1_30kgm2_1095_std')
+temp_save(df=denominator_comb1_30kgm2_1460_std, out_name=f'{Project.name}_tmp_incidence_denominator_comb1_30kgm2_1460_std')
+temp_save(df=denominator_comb1_30kgm2_1825_std, out_name=f'{Project.name}_tmp_incidence_denominator_comb1_30kgm2_1825_std')
+
+# COMMAND ----------
+
+# MAGIC %md # 8. Compute incidence
+
+# COMMAND ----------
+
+# DBTITLE 1,Load numerators and denominators
+# Numerators (crude)
+numerator_all   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_all')
+numerator_sex   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_sex')
+numerator_eth5  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_eth5')
+numerator_eth18 = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_eth18')
+numerator_imd   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_imd')
+numerator_imd10 = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_imd10')
+numerator_reg   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_reg')
+numerator_lacd   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_lacd')
+numerator_lacl   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_lacl')
+numerator_msoa  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_msoa')
+numerator_comb1  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_comb1')
+
+numerator_all_30kgm2   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_all_30kgm2')
+numerator_sex_30kgm2   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_sex_30kgm2')
+numerator_eth5_30kgm2  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_eth5_30kgm2')
+numerator_eth18_30kgm2 = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_eth18_30kgm2')
+numerator_imd_30kgm2   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_imd_30kgm2')
+numerator_imd10_30kgm2 = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_imd10_30kgm2')
+numerator_reg_30kgm2   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_reg_30kgm2')
+numerator_lacd_30kgm2  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_lacd_30kgm2')
+numerator_lacl_30kgm2  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_lacl_30kgm2')
+numerator_msoa_30kgm2  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_msoa_30kgm2')
+numerator_comb1_30kgm2  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_comb1_30kgm2')
+
+# Numerators (standardised)
+numerator_all_std   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_all_std')
+numerator_sex_std   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_sex_std')
+numerator_eth5_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_eth5_std')
+numerator_eth18_std = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_eth18_std')
+numerator_imd_std   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_imd_std')
+numerator_imd10_std = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_imd10_std')
+numerator_reg_std   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_reg_std')
+numerator_lacd_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_lacd_std')
+numerator_lacl_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_lacl_std')
+# numerator_msoa_std = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_msoa')
+numerator_comb1_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_comb1_std')
+
+numerator_all_30kgm2_std   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_all_30kgm2_std')
+numerator_sex_30kgm2_std   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_sex_30kgm2_std')
+numerator_eth5_30kgm2_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_eth5_30kgm2_std')
+numerator_eth18_30kgm2_std = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_eth18_30kgm2_std')
+numerator_imd_30kgm2_std   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_imd_30kgm2_std')
+numerator_imd10_30kgm2_std = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_imd10_30kgm2_std')
+numerator_reg_30kgm2_std   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_reg_30kgm2_std')
+numerator_lacd_30kgm2_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_lacd_30kgm2_std')
+numerator_lacl_30kgm2_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_lacl_30kgm2_std')
+# numerator_msoa_30kgm2  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_msoa_30kgm2')
+numerator_comb1_30kgm2_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_comb1_30kgm2_std')
+numerator_comb1_18grp_30kgm2_std = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_comb1_18grp_30kgm2_std')
+
+# Denominators (crude)
+denominator_all   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_all')
+denominator_sex   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_sex')
+denominator_eth5  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_eth5')
+denominator_eth18 = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_eth18')
+denominator_imd   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_imd')
+denominator_imd10 = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_imd10')
+denominator_reg   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_reg')
+denominator_lacd  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_lacd')
+denominator_lacl  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_lacl')
+denominator_msoa  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_msoa')
+denominator_comb1  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_comb1')
+
+denominator_all_30kgm2   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_all_30kgm2')
+denominator_sex_30kgm2   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_sex_30kgm2')
+denominator_eth5_30kgm2  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_eth5_30kgm2')
+denominator_eth18_30kgm2 = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_eth18_30kgm2')
+denominator_imd_30kgm2   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_imd_30kgm2')
+denominator_imd10_30kgm2 = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_imd10_30kgm2')
+denominator_reg_30kgm2   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_reg_30kgm2')
+denominator_lacd_30kgm2  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_lacd_30kgm2')
+denominator_lacl_30kgm2  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_lacl_30kgm2')
+denominator_msoa_30kgm2  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_msoa_30kgm2')
+denominator_comb1_30kgm2  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_comb1_30kgm2')
+
+# Denominators (standardised)
+denominator_all_std   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_all_std')
+#***REMOVED***denominator_sex_std   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_sex_std')
+denominator_eth5_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_eth5_std')
+denominator_eth18_std = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_eth18_std')
+denominator_imd_std   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_imd_std')
+denominator_imd10_std = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_imd10_std')
+denominator_reg_std   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_reg_std')
+denominator_lacd_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_lacd_std')
+denominator_lacl_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_lacl_std')
+# denominator_msoa_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_msoa')
+denominator_comb1_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_comb1_std')
+
+denominator_all_30kgm2_std   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_all_30kgm2_std')
+#***REMOVED***denominator_sex_30kgm2_std   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_sex_30kgm2_std')
+denominator_eth5_30kgm2_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_eth5_30kgm2_std')
+denominator_eth18_30kgm2_std = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_eth18_30kgm2_std')
+denominator_imd_30kgm2_std   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_imd_30kgm2_std')
+denominator_imd10_30kgm2_std = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_imd10_30kgm2_std')
+denominator_reg_30kgm2_std   = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_reg_30kgm2_std')
+denominator_lacd_30kgm2_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_lacd_30kgm2_std')
+denominator_lacl_30kgm2_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_lacl_30kgm2_std')
+#***REMOVED***denominator_msoa_30kgm2_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_msoa_30kgm2')
+denominator_comb1_30kgm2_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_comb1_30kgm2_std')
+denominator_comb1_18grp_30kgm2_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_comb1_18grp_30kgm2_std')
+
+# Pregnancy stuff
+numerator_comb1_preg_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_numerator_comb1_preg_std')
+denominator_comb1_preg_std  = spark.table(f'{Project.dsa}.{Project.name}_tmp_incidence_denominator_comb1_preg_std')
+
+# COMMAND ----------
+
+display(numerator_all_std.where(f.col("years") == 2025))
+
+# COMMAND ----------
+
+# DBTITLE 1,Calculations (crude)
+#***REMOVED***All
+all = (
+    numerator_all.join(denominator_all, on=['months', 'years'], how='left')
+    .withColumn('incidence', f.col('n') / f.col('all_py') * 100000)
+)
+
+all_30kgm2 = (
+    numerator_all_30kgm2.join(denominator_all_30kgm2, on=['months', 'years'], how='left')
+    .withColumn('incidence', f.col('n') / f.col('all_py') * 100000)
+)
+
+# Sex
+sex = (
+    numerator_sex.join(denominator_sex, on=['months', 'years'], how='left')
+    .withColumn('incidence_m', f.col('M') / f.col('m_py') * 100000)
+    .withColumn('incidence_f', f.col('F') / f.col('f_py') * 100000)
+)
+
+sex_30kgm2 = (
+    numerator_sex_30kgm2.join(denominator_sex_30kgm2, on=['months', 'years'], how='left')
+    .withColumn('incidence_m', f.col('M') / f.col('m_py') * 100000)
+    .withColumn('incidence_f', f.col('F') / f.col('f_py') * 100000)
+)
+
+# Ethnicity (5 groups)
+eth5 = (
+    numerator_eth5.join(denominator_eth5, on=['months', 'years'], how='left')
+    .withColumn('incidence_asian', f.col('Asian') / f.col('asian_py') * 100000)
+    .withColumn('incidence_black', f.col('Black') / f.col('black_py') * 100000)
+    .withColumn('incidence_white', f.col('White') / f.col('white_py') * 100000)
+    .withColumn('incidence_mixed', f.col('Mixed') / f.col('mixed_py') * 100000)
+    .withColumn('incidence_missing', f.col('Missing') / f.col('missing_py') * 100000)
+)
+
+eth5_30kgm2 = (
+    numerator_eth5_30kgm2.join(denominator_eth5_30kgm2, on=['months', 'years'], how='left')
+    .withColumn('incidence_asian', f.col('Asian') / f.col('asian_py') * 100000)
+    .withColumn('incidence_black', f.col('Black') / f.col('black_py') * 100000)
+    .withColumn('incidence_white', f.col('White') / f.col('white_py') * 100000)
+    .withColumn('incidence_mixed', f.col('Mixed') / f.col('mixed_py') * 100000)
+    .withColumn('incidence_missing', f.col('Missing') / f.col('missing_py') * 100000)
+)
+
+# Ethnicity (18 groups)
+eth18 = (
+    numerator_eth18.join(denominator_eth18, on=['months', 'years'], how='left')
+    .withColumn('incidence_british', f.col('British') / f.col('british_py') * 100000)
+    .withColumn('incidence_irish', f.col('Irish') / f.col('irish_py') * 100000)
+    .withColumn('incidence_traveller', f.col('Traveller') / f.col('traveller_py') * 100000)
+    .withColumn('incidence_pakistani', f.col('Pakistani') / f.col('pakistani_py') * 100000)
+    .withColumn('incidence_indian', f.col('Indian') / f.col('indian_py') * 100000)
+    .withColumn('incidence_bangladeshi', f.col('Bangladeshi') / f.col('bangladeshi_py') * 100000)
+    .withColumn('incidence_chinese', f.col('Chinese') / f.col('chinese_py') * 100000)
+    .withColumn('incidence_arab', f.col('Arab') / f.col('arab_py') * 100000)
+    .withColumn('incidence_african', f.col('African') / f.col('african_py') * 100000)
+    .withColumn('incidence_caribbean', f.col('Caribbean') / f.col('caribbean_py') * 100000)
+    .withColumn('incidence_white_asian', f.col('White_Asian') / f.col('white_asian_py') * 100000)
+    .withColumn('incidence_white_black_african', f.col('White_Black_African') / f.col('white_black_african_py') * 100000)
+    .withColumn('incidence_white_black_caribbean', f.col('White_Black_Caribbean') / f.col('white_black_caribbean_py') * 100000)
+    .withColumn('incidence_asian_other', f.col('Asian_Other') / f.col('asian_other_py') * 100000)
+    .withColumn('incidence_black_other', f.col('Black_Other') / f.col('black_other_py') * 100000)
+    .withColumn('incidence_white_other', f.col('White_Other') / f.col('white_other_py') * 100000)
+    .withColumn('incidence_mixed_other', f.col('Mixed_Other') / f.col('mixed_other_py') * 100000)
+    .withColumn('incidence_other', f.col('Other') / f.col('other_py') * 100000)
+)
+
+eth18_30kgm2 = (
+    numerator_eth18_30kgm2.join(denominator_eth18_30kgm2, on=['months', 'years'], how='left')
+    .withColumn('incidence_british', f.col('British') / f.col('british_py') * 100000)
+    .withColumn('incidence_irish', f.col('Irish') / f.col('irish_py') * 100000)
+    .withColumn('incidence_traveller', f.col('Traveller') / f.col('traveller_py') * 100000)
+    .withColumn('incidence_pakistani', f.col('Pakistani') / f.col('pakistani_py') * 100000)
+    .withColumn('incidence_indian', f.col('Indian') / f.col('indian_py') * 100000)
+    .withColumn('incidence_bangladeshi', f.col('Bangladeshi') / f.col('bangladeshi_py') * 100000)
+    .withColumn('incidence_chinese', f.col('Chinese') / f.col('chinese_py') * 100000)
+    .withColumn('incidence_arab', f.col('Arab') / f.col('arab_py') * 100000)
+    .withColumn('incidence_african', f.col('African') / f.col('african_py') * 100000)
+    .withColumn('incidence_caribbean', f.col('Caribbean') / f.col('caribbean_py') * 100000)
+    .withColumn('incidence_white_asian', f.col('White_Asian') / f.col('white_asian_py') * 100000)
+    .withColumn('incidence_white_black_african', f.col('White_Black_African') / f.col('white_black_african_py') * 100000)
+    .withColumn('incidence_white_black_caribbean', f.col('White_Black_Caribbean') / f.col('white_black_caribbean_py') * 100000)
+    .withColumn('incidence_asian_other', f.col('Asian_Other') / f.col('asian_other_py') * 100000)
+    .withColumn('incidence_black_other', f.col('Black_Other') / f.col('black_other_py') * 100000)
+    .withColumn('incidence_white_other', f.col('White_Other') / f.col('white_other_py') * 100000)
+    .withColumn('incidence_mixed_other', f.col('Mixed_Other') / f.col('mixed_other_py') * 100000)
+    .withColumn('incidence_other', f.col('Other') / f.col('other_py') * 100000)
+)
+
+# Index of multiple deprivation
+imd = (
+    numerator_imd.join(denominator_imd, on=['months', 'years'], how='left')
+    .withColumn('incidence_1', f.col('1') / f.col('1_py') * 100000)
+    .withColumn('incidence_2', f.col('2') / f.col('2_py') * 100000)
+    .withColumn('incidence_3', f.col('3') / f.col('3_py') * 100000)
+    .withColumn('incidence_4', f.col('4') / f.col('4_py') * 100000)
+    .withColumn('incidence_5', f.col('5') / f.col('5_py') * 100000)
+)
+
+imd_30kgm2 = (
+    numerator_imd_30kgm2.join(denominator_imd_30kgm2, on=['months', 'years'], how='left')
+    .withColumn('incidence_1', f.col('1') / f.col('1_py') * 100000)
+    .withColumn('incidence_2', f.col('2') / f.col('2_py') * 100000)
+    .withColumn('incidence_3', f.col('3') / f.col('3_py') * 100000)
+    .withColumn('incidence_4', f.col('4') / f.col('4_py') * 100000)
+    .withColumn('incidence_5', f.col('5') / f.col('5_py') * 100000)
+)
+
+# Index of multiple deprivation deciles
+imd10 = (
+    numerator_imd10.join(denominator_imd10, on=['months', 'years'], how='left')
+    .withColumn('incidence_1', f.col('1') / f.col('1_py') * 100000)
+    .withColumn('incidence_2', f.col('2') / f.col('2_py') * 100000)
+    .withColumn('incidence_3', f.col('3') / f.col('3_py') * 100000)
+    .withColumn('incidence_4', f.col('4') / f.col('4_py') * 100000)
+    .withColumn('incidence_5', f.col('5') / f.col('5_py') * 100000)
+    .withColumn('incidence_6', f.col('6') / f.col('6_py') * 100000)
+    .withColumn('incidence_7', f.col('7') / f.col('7_py') * 100000)
+    .withColumn('incidence_8', f.col('8') / f.col('8_py') * 100000)
+    .withColumn('incidence_9', f.col('9') / f.col('9_py') * 100000)
+    .withColumn('incidence_10', f.col('10') / f.col('10_py') * 100000)
+)
+
+imd10_30kgm2 = (
+    numerator_imd10_30kgm2.join(denominator_imd10_30kgm2, on=['months', 'years'], how='left')
+    .withColumn('incidence_1', f.col('1') / f.col('1_py') * 100000)
+    .withColumn('incidence_2', f.col('2') / f.col('2_py') * 100000)
+    .withColumn('incidence_3', f.col('3') / f.col('3_py') * 100000)
+    .withColumn('incidence_4', f.col('4') / f.col('4_py') * 100000)
+    .withColumn('incidence_5', f.col('5') / f.col('5_py') * 100000)
+    .withColumn('incidence_6', f.col('6') / f.col('6_py') * 100000)
+    .withColumn('incidence_7', f.col('7') / f.col('7_py') * 100000)
+    .withColumn('incidence_8', f.col('8') / f.col('8_py') * 100000)
+    .withColumn('incidence_9', f.col('9') / f.col('9_py') * 100000)
+    .withColumn('incidence_10', f.col('10') / f.col('10_py') * 100000)
+)
+
+# Region
+reg = (
+    numerator_reg.join(denominator_reg, on=['months', 'years'], how='left')
+    .withColumn('incidence_yorkshire', f.col('Yorkshire') / f.col('yorkshire_py') * 100000)
+    .withColumn('incidence_west_mid', f.col('West_Mid') / f.col('west_mid_py') * 100000)
+    .withColumn('incidence_east_mid', f.col('East_Mid') / f.col('east_mid_py') * 100000)
+    .withColumn('incidence_east_eng', f.col('East_Eng') / f.col('east_eng_py') * 100000)
+    .withColumn('incidence_london', f.col('London') / f.col('london_py') * 100000)
+    .withColumn('incidence_ne', f.col('NE') / f.col('ne_py') * 100000)
+    .withColumn('incidence_nw', f.col('NW') / f.col('nw_py') * 100000)
+    .withColumn('incidence_se', f.col('SE') / f.col('se_py') * 100000)
+    .withColumn('incidence_se', f.col('SW') / f.col('sw_py') * 100000)
+)
+
+reg_30kgm2 = (
+    numerator_reg_30kgm2.join(denominator_reg_30kgm2, on=['months', 'years'], how='left')
+    .withColumn('incidence_yorkshire', f.col('Yorkshire') / f.col('yorkshire_py') * 100000)
+    .withColumn('incidence_west_mid', f.col('West_Mid') / f.col('west_mid_py') * 100000)
+    .withColumn('incidence_east_mid', f.col('East_Mid') / f.col('east_mid_py') * 100000)
+    .withColumn('incidence_east_eng', f.col('East_Eng') / f.col('east_eng_py') * 100000)
+    .withColumn('incidence_london', f.col('London') / f.col('london_py') * 100000)
+    .withColumn('incidence_ne', f.col('NE') / f.col('ne_py') * 100000)
+    .withColumn('incidence_nw', f.col('NW') / f.col('nw_py') * 100000)
+    .withColumn('incidence_se', f.col('SE') / f.col('se_py') * 100000)
+    .withColumn('incidence_se', f.col('SW') / f.col('sw_py') * 100000)
+)
+
+# LACD
+lacd = (
+    numerator_lacd.join(denominator_lacd, on=['months', 'years'], how='left')
+    .withColumn('incidence_1a1r', f.col('1a1r') / f.col('1a1r_py') * 100000)
+    .withColumn('incidence_1b1r', f.col('1b1r') / f.col('1b1r_py') * 100000)
+    .withColumn('incidence_1b2r', f.col('1b2r') / f.col('1b2r_py') * 100000)
+    .withColumn('incidence_2a1r', f.col('2a1r') / f.col('2a1r_py') * 100000)
+    .withColumn('incidence_2b1r', f.col('2b1r') / f.col('2b1r_py') * 100000)
+    .withColumn('incidence_3a1r', f.col('3a1r') / f.col('3a1r_py') * 100000)
+    .withColumn('incidence_3a2r', f.col('3a2r') / f.col('3a2r_py') * 100000)
+    .withColumn('incidence_3b1r', f.col('3b1r') / f.col('3b1r_py') * 100000)
+    .withColumn('incidence_3b2r', f.col('3b2r') / f.col('3b2r_py') * 100000)
+    .withColumn('incidence_4a1r', f.col('4a1r') / f.col('4a1r_py') * 100000)
+    .withColumn('incidence_5a1r', f.col('5a1r') / f.col('5a1r_py') * 100000)
+    .withColumn('incidence_6a1r', f.col('6a1r') / f.col('6a1r_py') * 100000)
+    .withColumn('incidence_6a2r', f.col('6a2r') / f.col('6a2r_py') * 100000)
+    .withColumn('incidence_6a3r', f.col('6a3r') / f.col('6a3r_py') * 100000)
+    .withColumn('incidence_7a1r', f.col('7a1r') / f.col('7a1r_py') * 100000)
+    .withColumn('incidence_7c1r', f.col('7c1r') / f.col('7c1r_py') * 100000)
+    .withColumn('incidence_7c2r', f.col('7c2r') / f.col('7c2r_py') * 100000)
+    .withColumn('incidence_8a1r', f.col('8a1r') / f.col('8a1r_py') * 100000)
+    .withColumn('incidence_8a2r', f.col('8a2r') / f.col('8a2r_py') * 100000)
+    .withColumn('incidence_8b1r', f.col('8b1r') / f.col('8b1r_py') * 100000)
+    .withColumn('incidence_8b2r', f.col('8b2r') / f.col('8b2r_py') * 100000)
+)
+
+lacd_30kgm2 = (
+    numerator_lacd_30kgm2.join(denominator_lacd_30kgm2, on=['months', 'years'], how='left')
+    .withColumn('incidence_1a1r', f.col('1a1r') / f.col('1a1r_py') * 100000)
+    .withColumn('incidence_1b1r', f.col('1b1r') / f.col('1b1r_py') * 100000)
+    .withColumn('incidence_1b2r', f.col('1b2r') / f.col('1b2r_py') * 100000)
+    .withColumn('incidence_2a1r', f.col('2a1r') / f.col('2a1r_py') * 100000)
+    .withColumn('incidence_2b1r', f.col('2b1r') / f.col('2b1r_py') * 100000)
+    .withColumn('incidence_3a1r', f.col('3a1r') / f.col('3a1r_py') * 100000)
+    .withColumn('incidence_3a2r', f.col('3a2r') / f.col('3a2r_py') * 100000)
+    .withColumn('incidence_3b1r', f.col('3b1r') / f.col('3b1r_py') * 100000)
+    .withColumn('incidence_3b2r', f.col('3b2r') / f.col('3b2r_py') * 100000)
+    .withColumn('incidence_4a1r', f.col('4a1r') / f.col('4a1r_py') * 100000)
+    .withColumn('incidence_5a1r', f.col('5a1r') / f.col('5a1r_py') * 100000)
+    .withColumn('incidence_6a1r', f.col('6a1r') / f.col('6a1r_py') * 100000)
+    .withColumn('incidence_6a2r', f.col('6a2r') / f.col('6a2r_py') * 100000)
+    .withColumn('incidence_6a3r', f.col('6a3r') / f.col('6a3r_py') * 100000)
+    .withColumn('incidence_7a1r', f.col('7a1r') / f.col('7a1r_py') * 100000)
+    .withColumn('incidence_7c1r', f.col('7c1r') / f.col('7c1r_py') * 100000)
+    .withColumn('incidence_7c2r', f.col('7c2r') / f.col('7c2r_py') * 100000)
+    .withColumn('incidence_8a1r', f.col('8a1r') / f.col('8a1r_py') * 100000)
+    .withColumn('incidence_8a2r', f.col('8a2r') / f.col('8a2r_py') * 100000)
+    .withColumn('incidence_8b1r', f.col('8b1r') / f.col('8b1r_py') * 100000)
+    .withColumn('incidence_8b2r', f.col('8b2r') / f.col('8b2r_py') * 100000)
+)
+
+#***REMOVED***LACL
+lacl = (
+    numerator_lacl.join(denominator_lacl, on=['months', 'years'], how='left')
+    .withColumn('incidence_countryside', f.col('Countryside') / f.col('countryside_py') * 100000)
+    .withColumn('incidence_growth_areas', f.col('Growth_Areas') / f.col('growth_areas_py') * 100000)
+    .withColumn('incidence_london', f.col('London_Cosmopolitan') / f.col('london_cosmopolitan_py') * 100000)
+    .withColumn('incidence_industrial', f.col('Post_Industrial') / f.col('post_industrial_py') * 100000)
+    .withColumn('incidence_rural_prosperous', f.col('Rural_Prosperous') / f.col('rural_prosperous_py') * 100000)
+    .withColumn('incidence_seaside', f.col('Seaside') / f.col('seaside_py') * 100000)
+    .withColumn('incidence_university_towns', f.col('University_Towns') / f.col('university_towns_py') * 100000)
+    .withColumn('incidence_urban', f.col('Urban_Non_London') / f.col('urban_non_london_py') * 100000)
+)
+
+lacl_30kgm2 = (
+    numerator_lacl_30kgm2.join(denominator_lacl_30kgm2, on=['months', 'years'], how='left')
+    .withColumn('incidence_countryside', f.col('Countryside') / f.col('countryside_py') * 100000)
+    .withColumn('incidence_growth_areas', f.col('Growth_Areas') / f.col('growth_areas_py') * 100000)
+    .withColumn('incidence_london', f.col('London_Cosmopolitan') / f.col('london_cosmopolitan_py') * 100000)
+    .withColumn('incidence_industrial', f.col('Post_Industrial') / f.col('post_industrial_py') * 100000)
+    .withColumn('incidence_rural_prosperous', f.col('Rural_Prosperous') / f.col('rural_prosperous_py') * 100000)
+    .withColumn('incidence_seaside', f.col('Seaside') / f.col('seaside_py') * 100000)
+    .withColumn('incidence_university_towns', f.col('University_Towns') / f.col('university_towns_py') * 100000)
+    .withColumn('incidence_urban', f.col('Urban_Non_London') / f.col('urban_non_london_py') * 100000)
+)
+
+# MSOA
+msoa =  (
+    region_codes.select(f.col('msoa_code').alias('msoa'))
+    .join(numerator_msoa, on='msoa', how='left')
+    .join(denominator_msoa, on='msoa', how='left')
+)
+
+msoa_30kgm2 =  (
+    region_codes.select(f.col('msoa_code').alias('msoa'))
+    .join(numerator_msoa_30kgm2, on='msoa', how='left')
+    .join(denominator_msoa_30kgm2, on='msoa', how='left')
+)
+
+# Comb1
+comb1 = (
+    numerator_comb1.join(denominator_comb1, on=['months', 'years'], how='left')
+)
+
+comb1_30kgm2 = (
+    numerator_comb1_30kgm2.join(denominator_comb1_30kgm2, on=['months', 'years'], how='left')
+)
+
+# COMMAND ----------
+
+# DBTITLE 1,Calculations (standardised)
+all_std = (
+    numerator_all_std
+    .withColumnRenamed('age_grp_5yr', 'age')
+    .join(denominator_all_std, on=['months', 'years', 'age', 'sex'], how='left')
+    .withColumn('incidence', f.col('n') / f.col('py') * 100000)
+)
+
+all_30kgm2_std = (
+    numerator_all_30kgm2_std
+    .withColumnRenamed('age_grp_5yr', 'age')
+    .join(denominator_all_30kgm2_std, on=['months', 'years', 'age', 'sex'], how='left')
+    .withColumn('incidence', f.col('n') / f.col('py') * 100000)
+)
+
+eth5_std = (
+    numerator_eth5_std
+    .fillna(0, subset=["White", "Black", "Asian", "Mixed", "Missing"])
+    .selectExpr(
+        "months", "years", "sex", "age_grp_5yr",
+        "stack(5, 'White', White, 'Black', Black, 'Asian', Asian, 'Mixed', Mixed, 'Missing', Missing) as (ethnicity_5_recoded, n)"
+    )
+    .withColumnRenamed('age_grp_5yr', 'age')
+    .join(denominator_eth5_std, on=['months', 'years', 'age', 'sex', 'ethnicity_5_recoded'], how='left')
+    .withColumn('incidence', f.col('n') / f.col('py') * 100000)
+)
+
+eth5_30kgm2_std = (
+    numerator_eth5_30kgm2_std
+    .fillna(0, subset=["White", "Black", "Asian", "Mixed", "Missing"])
+    .selectExpr(
+        "months", "years", "sex", "age_grp_5yr",
+        "stack(5, 'White', White, 'Black', Black, 'Asian', Asian, 'Mixed', Mixed, 'Missing', Missing) as (ethnicity_5_recoded, n)"
+    )
+    .withColumnRenamed('age_grp_5yr', 'age')
+    .join(denominator_eth5_30kgm2_std, on=['months', 'years', 'age', 'sex', 'ethnicity_5_recoded'], how='left')
+    .withColumn('incidence', f.col('n') / f.col('py') * 100000)
+)
+
+eth18_std = (
+    numerator_eth18_std
+    .fillna(
+        0, subset=[
+            "African", "Arab", "Asian_Other", "Bangladeshi", "Black_Other", "British", "Caribbean", "Chinese",
+            "Indian", "Irish", "Missing", "Mixed_Other", "Other", "Pakistani", "Traveller", "White_Asian", 
+            "White_Black_African", "White_Black_Caribbean", "White_Other"
+           ]
+    )  
+    .selectExpr(
+        "months", "years", "sex", "age_grp_5yr",
+        "stack(19, 'African', African, 'Arab', Arab, 'Asian_Other', Asian_Other, 'Bangladeshi', Bangladeshi, 'Black_Other', Black_Other, 'British', British, 'Caribbean', Caribbean, 'Chinese', Chinese, 'Indian', Indian, 'Irish', Irish, 'Missing', Missing, 'Mixed_Other', Mixed_Other, 'Other', Other, 'Pakistani', Pakistani, 'Traveller', Traveller, 'White_Asian', White_Asian, 'White_Black_African', White_Black_African, 'White_Black_Caribbean', White_Black_Caribbean, 'White_Other', White_Other) as (ethnicity_18_recoded, n)"
+    )
+    .withColumnRenamed('age_grp_5yr', 'age')
+    .join(denominator_eth18_std, on=['months', 'years', 'age', 'sex', 'ethnicity_18_recoded'], how='left')
+    .withColumn('incidence', f.col('n') / f.col('py') * 100000)
+)
+
+eth18_30kgm2_std = (
+    numerator_eth18_30kgm2_std
+    .fillna(
+        0, subset=[
+            "African", "Arab", "Asian_Other", "Bangladeshi", "Black_Other", "British", "Caribbean", "Chinese",
+            "Indian", "Irish", "Missing", "Mixed_Other", "Other", "Pakistani", "Traveller", "White_Asian", 
+            "White_Black_African", "White_Black_Caribbean", "White_Other"
+           ]
+    )  
+    .selectExpr(
+        "months", "years", "sex", "age_grp_5yr",
+        "stack(19, 'African', African, 'Arab', Arab, 'Asian_Other', Asian_Other, 'Bangladeshi', Bangladeshi, 'Black_Other', Black_Other, 'British', British, 'Caribbean', Caribbean, 'Chinese', Chinese, 'Indian', Indian, 'Irish', Irish, 'Missing', Missing, 'Mixed_Other', Mixed_Other, 'Other', Other, 'Pakistani', Pakistani, 'Traveller', Traveller, 'White_Asian', White_Asian, 'White_Black_African', White_Black_African, 'White_Black_Caribbean', White_Black_Caribbean, 'White_Other', White_Other) as (ethnicity_18_recoded, n)"
+    )
+    .withColumnRenamed('age_grp_5yr', 'age')
+    .join(denominator_eth18_30kgm2_std, on=['months', 'years', 'age', 'sex', 'ethnicity_18_recoded'], how='left')
+    .withColumn('incidence', f.col('n') / f.col('py') * 100000)
+)
+
+imd_std = (
+    numerator_imd_std
+    .fillna(0, subset=["1", "2", "3", "4", "5"])
+    .withColumnRenamed('1', 'One')
+    .withColumnRenamed('2', 'Two')
+    .withColumnRenamed('3', 'Three')
+    .withColumnRenamed('4', 'Four')
+    .withColumnRenamed('5', 'Five')
+    .selectExpr(
+        "months", "years", "sex", "age_grp_5yr",
+        "stack(5, 'One', One, 'Two', Two, 'Three', Three, 'Four', Four, 'Five', Five) as (imd_quintile, n)"
+    )
+    .withColumn(
+        'imd_quintile',
+        f.when(f.col('imd_quintile') == 'One', 1)
+        .when(f.col('imd_quintile') == 'Two', 2)
+        .when(f.col('imd_quintile') == 'Three', 3)
+        .when(f.col('imd_quintile') == 'Four', 4)
+        .when(f.col('imd_quintile') == 'Five', 5)
+    )
+    .withColumnRenamed('age_grp_5yr', 'age')
+    .join(denominator_imd_std, on=['months', 'years', 'age', 'sex', 'imd_quintile'], how='left')
+    .withColumn('incidence', f.col('n') / f.col('py') * 100000)
+)
+
+imd_30kgm2_std = (
+    numerator_imd_30kgm2_std
+    .fillna(0, subset=["1", "2", "3", "4", "5"])
+    .withColumnRenamed('1', 'One')
+    .withColumnRenamed('2', 'Two')
+    .withColumnRenamed('3', 'Three')
+    .withColumnRenamed('4', 'Four')
+    .withColumnRenamed('5', 'Five')
+    .selectExpr(
+        "months", "years", "sex", "age_grp_5yr",
+        "stack(5, 'One', One, 'Two', Two, 'Three', Three, 'Four', Four, 'Five', Five) as (imd_quintile, n)"
+    )
+    .withColumn(
+        'imd_quintile',
+        f.when(f.col('imd_quintile') == 'One', 1)
+        .when(f.col('imd_quintile') == 'Two', 2)
+        .when(f.col('imd_quintile') == 'Three', 3)
+        .when(f.col('imd_quintile') == 'Four', 4)
+        .when(f.col('imd_quintile') == 'Five', 5)
+    )
+    .withColumnRenamed('age_grp_5yr', 'age')
+    .join(denominator_imd_30kgm2_std, on=['months', 'years', 'age', 'sex', 'imd_quintile'], how='left')
+    .withColumn('incidence', f.col('n') / f.col('py') * 100000)
+)
+
+imd10_std = (
+    numerator_imd10_std
+    .fillna(0, subset=["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"])
+    .withColumnRenamed('1', 'One')
+    .withColumnRenamed('2', 'Two')
+    .withColumnRenamed('3', 'Three')
+    .withColumnRenamed('4', 'Four')
+    .withColumnRenamed('5', 'Five')
+    .withColumnRenamed('6', 'Six')
+    .withColumnRenamed('7', 'Seven')
+    .withColumnRenamed('8', 'Eight')
+    .withColumnRenamed('9', 'Nine')
+    .withColumnRenamed('10', 'Ten')
+    .selectExpr(
+        "months", "years", "sex", "age_grp_5yr",
+        "stack(10, 'One', One, 'Two', Two, 'Three', Three, 'Four', Four, 'Five', Five, 'Six', Six, 'Seven', Seven, 'Eight', Eight, 'Nine', Nine, 'Ten', Ten) as (imd_decile, n)"
+    )
+    .withColumn(
+        'imd_decile',
+        f.when(f.col('imd_decile') == 'One', 1)
+        .when(f.col('imd_decile') == 'Two', 2)
+        .when(f.col('imd_decile') == 'Three', 3)
+        .when(f.col('imd_decile') == 'Four', 4)
+        .when(f.col('imd_decile') == 'Five', 5)
+        .when(f.col('imd_decile') == 'Six', 6)
+        .when(f.col('imd_decile') == 'Seven', 7)
+        .when(f.col('imd_decile') == 'Eight', 8)
+        .when(f.col('imd_decile') == 'Nine', 9)
+        .when(f.col('imd_decile') == 'Ten', 10)
+    )
+    .withColumnRenamed('age_grp_5yr', 'age')
+    .join(denominator_imd10_std, on=['months', 'years', 'age', 'sex', 'imd_decile'], how='left')
+    .withColumn(
+        'imd_decile', 
+        f.when(f.col('imd_decile') == 1, f.lit('1 (Most deprived)'))
+         .when(f.col('imd_decile') == 10, f.lit('10 (Least deprived)'))
+         .otherwise(f.col('imd_decile'))
+    )
+    .withColumn('incidence', f.col('n') / f.col('py') * 100000)
+)
+
+imd10_30kgm2_std = (
+    numerator_imd10_30kgm2_std
+    .fillna(0, subset=["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"])
+    .withColumnRenamed('1', 'One')
+    .withColumnRenamed('2', 'Two')
+    .withColumnRenamed('3', 'Three')
+    .withColumnRenamed('4', 'Four')
+    .withColumnRenamed('5', 'Five')
+    .withColumnRenamed('6', 'Six')
+    .withColumnRenamed('7', 'Seven')
+    .withColumnRenamed('8', 'Eight')
+    .withColumnRenamed('9', 'Nine')
+    .withColumnRenamed('10', 'Ten')
+    .selectExpr(
+        "months", "years", "sex", "age_grp_5yr",
+        "stack(10, 'One', One, 'Two', Two, 'Three', Three, 'Four', Four, 'Five', Five, 'Six', Six, 'Seven', Seven, 'Eight', Eight, 'Nine', Nine, 'Ten', Ten) as (imd_decile, n)"
+    )
+    .withColumn(
+        'imd_decile',
+        f.when(f.col('imd_decile') == 'One', 1)
+        .when(f.col('imd_decile') == 'Two', 2)
+        .when(f.col('imd_decile') == 'Three', 3)
+        .when(f.col('imd_decile') == 'Four', 4)
+        .when(f.col('imd_decile') == 'Five', 5)
+        .when(f.col('imd_decile') == 'Six', 6)
+        .when(f.col('imd_decile') == 'Seven', 7)
+        .when(f.col('imd_decile') == 'Eight', 8)
+        .when(f.col('imd_decile') == 'Nine', 9)
+        .when(f.col('imd_decile') == 'Ten', 10)
+    )
+    .withColumnRenamed('age_grp_5yr', 'age')
+    .join(denominator_imd10_30kgm2_std, on=['months', 'years', 'age', 'sex', 'imd_decile'], how='left')
+    .withColumn(
+        'imd_decile', 
+        f.when(f.col('imd_decile') == 1, f.lit('1 (Most deprived)'))
+         .when(f.col('imd_decile') == 10, f.lit('10 (Least deprived)'))
+         .otherwise(f.col('imd_decile'))
+    )
+    .withColumn('incidence', f.col('n') / f.col('py') * 100000)
+)
+
+reg_std = (
+    numerator_reg_std
+    .fillna(0, subset=["East_Eng", "East_Mid", "London", "NE", "NW", "SE", "SW", "West_Mid", "Yorkshire"])
+    .selectExpr(
+        "months", "years", "sex", "age_grp_5yr",
+        "stack(9, 'East_Eng', East_Eng, 'East_Mid', East_Mid, 'London', London, 'NE', NE, 'NW', NW, 'SE', SE, 'SW', SW, 'West_Mid', West_Mid, 'Yorkshire', Yorkshire) as (region_recoded, n)"
+    )
+    .withColumnRenamed('age_grp_5yr', 'age')
+    .join(denominator_reg_std, on=['months', 'years', 'age', 'sex', 'region_recoded'], how='left')
+    .withColumn('incidence', f.col('n') / f.col('py') * 100000)
+)
+
+reg_30kgm2_std = (
+    numerator_reg_30kgm2_std
+    .fillna(0, subset=["East_Eng", "East_Mid", "London", "NE", "NW", "SE", "SW", "West_Mid", "Yorkshire"])
+    .selectExpr(
+        "months", "years", "sex", "age_grp_5yr",
+        "stack(9, 'East_Eng', East_Eng, 'East_Mid', East_Mid, 'London', London, 'NE', NE, 'NW', NW, 'SE', SE, 'SW', SW, 'West_Mid', West_Mid, 'Yorkshire', Yorkshire) as (region_recoded, n)"
+    )
+    .withColumnRenamed('age_grp_5yr', 'age')
+    .join(denominator_reg_30kgm2_std, on=['months', 'years', 'age', 'sex', 'region_recoded'], how='left')
+    .withColumn('incidence', f.col('n') / f.col('py') * 100000)
+)
+
+lacl_std = (
+    numerator_lacl_std
+    .fillna(0, subset=["Countryside", "Growth_Areas", "London_Cosmopolitan", "Post_Industrial", "Rural_Prosperous", "Seaside", "University_Towns", "Urban_Non_London"])
+    .selectExpr(
+        "months", "years", "sex", "age_grp_5yr",
+        "stack(8, 'Countryside', Countryside, 'Growth_Areas', Growth_Areas, 'London_Cosmopolitan', London_Cosmopolitan, 'Post_Industrial', Post_Industrial, 'Rural_Prosperous', Rural_Prosperous, 'Seaside', Seaside, 'University_Towns', University_Towns, 'Urban_Non_London', Urban_Non_London) as (LACLASS, n)"
+    )
+    .withColumnRenamed('age_grp_5yr', 'age')
+    .join(denominator_lacl_std, on=['months', 'years', 'age', 'sex', 'LACLASS'], how='left')
+    .withColumn('incidence', f.col('n') / f.col('py') * 100000)
+)
+
+lacl_30kgm2_std = (
+    numerator_lacl_30kgm2_std
+    .fillna(0, subset=["Countryside", "Growth_Areas", "London_Cosmopolitan", "Post_Industrial", "Rural_Prosperous", "Seaside", "University_Towns", "Urban_Non_London"])
+    .selectExpr(
+        "months", "years", "sex", "age_grp_5yr",
+        "stack(8, 'Countryside', Countryside, 'Growth_Areas', Growth_Areas, 'London_Cosmopolitan', London_Cosmopolitan, 'Post_Industrial', Post_Industrial, 'Rural_Prosperous', Rural_Prosperous, 'Seaside', Seaside, 'University_Towns', University_Towns, 'Urban_Non_London', Urban_Non_London) as (LACLASS, n)"
+    )
+    .withColumnRenamed('age_grp_5yr', 'age')
+    .join(denominator_lacl_30kgm2_std, on=['months', 'years', 'age', 'sex', 'LACLASS'], how='left')
+    .withColumn('incidence', f.col('n') / f.col('py') * 100000)
+)
+
+# Comb1
+comb1_std = (
+    numerator_comb1_std
+    .fillna(0, subset=["Asian_1", "Asian_2", "Asian_3", "Asian_4", "Asian_5", "Black_1", "Black_2", "Black_3", "Black_4", "Black_5", "Mixed_1", "Mixed_2", "Mixed_3", "Mixed_4", "Mixed_5", "White_1", "White_2", "White_3", "White_4", "White_5",
+    "Missing_1", "Missing_2", "Missing_3", "Missing_4", "Missing_5"])
+    .selectExpr(
+        "months", "years", "sex", "age_grp_5yr",
+        "stack(25, 'Asian_1', Asian_1, 'Asian_2', Asian_2, 'Asian_3', Asian_3, 'Asian_4', Asian_4, 'Asian_5', Asian_5, 'Black_1', Black_1, 'Black_2', Black_2, 'Black_3', Black_3, 'Black_4', Black_4, 'Black_5', Black_5, 'Mixed_1', Mixed_1, 'Mixed_2', Mixed_2, 'Mixed_3', Mixed_3, 'Mixed_4', Mixed_4, 'Mixed_5', Mixed_5, 'White_1', White_1, 'White_2', White_2, 'White_3', White_3, 'White_4', White_4, 'White_5', White_5, 'Missing_1', Missing_1, 'Missing_2', Missing_2, 'Missing_3', Missing_3, 'Missing_4', Missing_4, 'Missing_5', Missing_5) as (combined_1lvl, n)"
+    )
+    .withColumnRenamed('age_grp_5yr', 'age')
+    .join(denominator_comb1_std, on=['months', 'years', 'age', 'sex', 'combined_1lvl'], how='left')
+    .withColumn('incidence', f.col('n') / f.col('py') * 100000)
+)
+
+comb1_30kgm2_std = (
+    numerator_comb1_30kgm2_std
+    .fillna(0, subset=["Asian_1", "Asian_2", "Asian_3", "Asian_4", "Asian_5", "Black_1", "Black_2", "Black_3", "Black_4", "Black_5", "Mixed_1", "Mixed_2", "Mixed_3", "Mixed_4", "Mixed_5", "White_1", "White_2", "White_3", "White_4", "White_5",
+    "Missing_1", "Missing_2", "Missing_3", "Missing_4", "Missing_5"])
+    .selectExpr(
+        "months", "years", "sex", "age_grp_5yr",
+        "stack(25, 'Asian_1', Asian_1, 'Asian_2', Asian_2, 'Asian_3', Asian_3, 'Asian_4', Asian_4, 'Asian_5', Asian_5, 'Black_1', Black_1, 'Black_2', Black_2, 'Black_3', Black_3, 'Black_4', Black_4, 'Black_5', Black_5, 'Mixed_1', Mixed_1, 'Mixed_2', Mixed_2, 'Mixed_3', Mixed_3, 'Mixed_4', Mixed_4, 'Mixed_5', Mixed_5, 'White_1', White_1, 'White_2', White_2, 'White_3', White_3, 'White_4', White_4, 'White_5', White_5, 'Missing_1', Missing_1, 'Missing_2', Missing_2, 'Missing_3', Missing_3, 'Missing_4', Missing_4, 'Missing_5', Missing_5) as (combined_1lvl, n)"
+    )
+    .withColumnRenamed('age_grp_5yr', 'age')
+    .join(denominator_comb1_30kgm2_std, on=['months', 'years', 'age', 'sex', 'combined_1lvl'], how='left')
+    .withColumn('incidence', f.col('n') / f.col('py') * 100000)
+)
+
+comb1_preg_std = (
+    numerator_comb1_preg_std
+    .fillna(0, subset=["Asian_1", "Asian_2", "Asian_3", "Asian_4", "Asian_5", "Black_1", "Black_2", "Black_3", "Black_4", "Black_5", "Mixed_1", "Mixed_2", "Mixed_3", "Mixed_4", "Mixed_5", "White_1", "White_2", "White_3", "White_4", "White_5",
+    "Missing_1", "Missing_2", "Missing_3", "Missing_4", "Missing_5"])
+    .selectExpr(
+        "months", "years", "sex", "age_grp_5yr",
+        "stack(25, 'Asian_1', Asian_1, 'Asian_2', Asian_2, 'Asian_3', Asian_3, 'Asian_4', Asian_4, 'Asian_5', Asian_5, 'Black_1', Black_1, 'Black_2', Black_2, 'Black_3', Black_3, 'Black_4', Black_4, 'Black_5', Black_5, 'Mixed_1', Mixed_1, 'Mixed_2', Mixed_2, 'Mixed_3', Mixed_3, 'Mixed_4', Mixed_4, 'Mixed_5', Mixed_5, 'White_1', White_1, 'White_2', White_2, 'White_3', White_3, 'White_4', White_4, 'White_5', White_5, 'Missing_1', Missing_1, 'Missing_2', Missing_2, 'Missing_3', Missing_3, 'Missing_4', Missing_4, 'Missing_5', Missing_5) as (combined_1lvl, n)"
+    )
+    .withColumnRenamed('age_grp_5yr', 'age')
+    .join(denominator_comb1_preg_std, on=['months', 'years', 'age', 'sex', 'combined_1lvl'], how='left')
+    .withColumn('incidence', f.col('n') / f.col('py') * 100000)
+)
+
+# COMMAND ----------
+
+display(comb1_30kgm2_std)
+
+# COMMAND ----------
+
+# MAGIC %md # 9. Prepare data for modelling (in RStudio)
+
+# COMMAND ----------
+
+# import datetime # Need this because of conflict caused by `incidence_functions`
+
+# # Filter column names for the year we want
+# pattern = r'PERSON|cov_|birth|death|81|entry|exit|sex|ethnicity_18|ethnicity_5|imd_quin|imd_dec|reg|23'
+# selected_columns = [c for c in days_at_risk_per_patient.columns if re.search(pattern, c)]
+
+# # Then select those columns specified above
+# days_at_risk_reduced = days_at_risk_per_patient.select([f.col(c) for c in selected_columns])
+
+# # Collect the columns that start with 'days_'
+# days_cols = [f.col(c) for c in days_at_risk_reduced.columns if c.startswith('days_')]
+
+# # Use reduce to sum all these columns
+# days_at_risk_reduced2 = (
+#     days_at_risk_reduced
+#     .withColumn(
+#         "days_total",
+#         reduce(add, days_cols)
+#     )
+#     .drop(*[c for c in days_at_risk_reduced.columns if c.startswith("days_")])
+#     .filter((f.col('cov_hx_first_obesity_date') >= '2023-01-01') | f.col('cov_hx_first_obesity_date').isNull())
+#     .filter(f.col('days_total') > 0)
+#     .withColumn(
+#         'event',
+#         f.when((f.col('cov_hx_first_obesity_date') >= '2023-01-01') & (f.col('cov_hx_first_obesity_date') < '2024-01-01'), 1)
+#         .otherwise(0)
+#     )
+#     # Recode events that occurred after an individuals 81st birthday as 0
+#     .withColumn(
+#         'event',
+#         f.when(f.col('cov_hx_first_obesity_date') >= f.col('date_81'), 0)
+#         .otherwise(f.col('event'))
+#     )
+#     .withColumn('entry_date', f.when(f.col('entry_date') < '2023-01-01', '2023-01-01').otherwise(f.col('entry_date')))
+#     .withColumn('study_start_age', f.datediff(f.col('entry_date'), f.col('date_of_birth'))/365.25)
+#     .withColumn(
+#         'imd_decile', 
+#         f.when(f.col('imd_decile') == 1, f.lit('1 (Most deprived)'))
+#          .when(f.col('imd_decile') == 10, f.lit('10 (Least deprived)'))
+#          .otherwise(f.col('imd_decile'))
+#     )
+#    .select(
+#      'person_id', 'event', f.col('days_total').alias('days'), 'study_start_age', 'sex', 'imd_quintile', 'imd_decile', 'ethnicity_18_recoded', 'ethnicity_5_recoded', 'region_recoded'
+#    )
+# )
+
+# display(days_at_risk_reduced2)
+# save_table(days_at_risk_reduced2, f'{Project.name}_export_ipd_rate_data_2023')
+
+# COMMAND ----------
+
+# MAGIC %md # 10. Save
+
+# COMMAND ----------
+
+import datetime # Need this because of conflict caused by `incidence_functions`
+
+# Crude
+save_table(all, f'{Project.name}_export_incidence_all')
+save_table(sex, f'{Project.name}_export_incidence_sex')
+save_table(eth5, f'{Project.name}_export_incidence_eth5')
+save_table(eth18, f'{Project.name}_export_incidence_eth18')
+save_table(imd, f'{Project.name}_export_incidence_imd')
+save_table(imd10, f'{Project.name}_export_incidence_imd10')
+save_table(reg, f'{Project.name}_export_incidence_reg')
+save_table(lacd, f'{Project.name}_export_incidence_lacd')
+save_table(lacl, f'{Project.name}_export_incidence_lacl')
+save_table(msoa, f'{Project.name}_export_incidence_msoa')
+save_table(comb1, f'{Project.name}_export_incidence_comb1')
+
+
+save_table(all_30kgm2, f'{Project.name}_export_incidence_all_30kgm2')
+save_table(sex_30kgm2, f'{Project.name}_export_incidence_sex_30kgm2')
+save_table(eth5_30kgm2, f'{Project.name}_export_incidence_eth5_30kgm2')
+save_table(eth18_30kgm2, f'{Project.name}_export_incidence_eth18_30kgm2')
+save_table(imd_30kgm2, f'{Project.name}_export_incidence_imd_30kgm2')
+save_table(imd10_30kgm2, f'{Project.name}_export_incidence_imd10_30kgm2')
+save_table(reg_30kgm2, f'{Project.name}_export_incidence_reg_30kgm2')
+save_table(lacd_30kgm2, f'{Project.name}_export_incidence_lacd_30kgm2')
+save_table(lacl_30kgm2, f'{Project.name}_export_incidence_lacl_30kgm2')
+save_table(msoa_30kgm2, f'{Project.name}_export_incidence_msoa_30kgm2')
+save_table(comb1_30kgm2, f'{Project.name}_export_incidence_comb1_30kgm2')
+
+# COMMAND ----------
+
+import datetime # Need this because of conflict caused by `incidence_functions`
+
+# Standardised
+save_table(all_std, f'{Project.name}_export_incidence_all_std')
+save_table(eth5_std, f'{Project.name}_export_incidence_eth5_std')
+save_table(eth18_std, f'{Project.name}_export_incidence_eth18_std')
+save_table(imd_std, f'{Project.name}_export_incidence_imd_std')
+save_table(imd10_std, f'{Project.name}_export_incidence_imd10_std')
+save_table(reg_std, f'{Project.name}_export_incidence_reg_std')
+# save_table(lacd_std, f'{Project.name}_export_incidence_lacd_std')
+save_table(lacl_std, f'{Project.name}_export_incidence_lacl_std')
+save_table(comb1_std, f'{Project.name}_export_incidence_comb1_std')
+
+save_table(all_30kgm2_std, f'{Project.name}_export_incidence_all_30kgm2_std')
+save_table(eth5_30kgm2_std, f'{Project.name}_export_incidence_eth5_30kgm2_std')
+save_table(eth18_30kgm2_std, f'{Project.name}_export_incidence_eth18_30kgm2_std')
+save_table(imd_30kgm2_std, f'{Project.name}_export_incidence_imd_30kgm2_std')
+save_table(imd10_30kgm2_std, f'{Project.name}_export_incidence_imd10_30kgm2_std')
+save_table(reg_30kgm2_std, f'{Project.name}_export_incidence_reg_30kgm2_std')
+# save_table(lacd_30kgm2_std, f'{Project.name}_export_incidence_lacd_30kgm2_std')
+save_table(lacl_30kgm2_std, f'{Project.name}_export_incidence_lacl_30kgm2_std')
+save_table(comb1_30kgm2_std, f'{Project.name}_export_incidence_comb1_30kgm2_std')
+
+# COMMAND ----------
+
+ # Pregnancy
+ save_table(comb1_preg_std, f'{Project.name}_export_incidence_comb1_preg_std')

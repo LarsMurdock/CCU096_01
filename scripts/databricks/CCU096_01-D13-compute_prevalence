@@ -1,0 +1,756 @@
+# Databricks notebook source
+# MAGIC %md # CCU096_01-D13-compute_prevalence
+# MAGIC
+# MAGIC **Description** This notebook computes prevalence of obesity from start of the study to the end of the study. 
+# MAGIC
+# MAGIC **Authors** Stelios Boulitsakis Logothetis
+# MAGIC
+# MAGIC 
+# MAGIC
+# MAGIC **Acknowledgements** 
+# MAGIC
+# MAGIC **Data Output**
+# MAGIC - `export_random`
+
+# COMMAND ----------
+
+# MAGIC %md # 0. Setup
+
+# COMMAND ----------
+
+# DBTITLE 1,Libraries
+from pyspark.sql import functions as f, Window as w
+from pyspark.sql.types import StructType, StructField, StringType
+from functools import reduce
+from datetime import datetime
+import numpy as np
+import pandas as pd 
+
+import matplotlib
+import matplotlib.pyplot as plt
+import seaborn as sns
+import mythoslib
+
+# COMMAND ----------
+
+# DBTITLE 1,Functions
+# MAGIC %run "shds/common/functions"
+
+# COMMAND ----------
+
+# MAGIC %md # 1. Parameters
+
+# COMMAND ----------
+
+# MAGIC %run "./CCU096_01-D01-parameters"
+
+# COMMAND ----------
+
+from mythoslib import save_table, temp_save
+
+# COMMAND ----------
+
+# MAGIC %md # 2. Prevalence Functions
+
+# COMMAND ----------
+
+# MAGIC %run "./functions/prevalence_functions"
+
+# COMMAND ----------
+
+# MAGIC %md # 3. Data Sources
+
+# COMMAND ----------
+
+skinny  = spark.table(Paths.cur_skinny)
+
+# Regular analysis
+cases    = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_cohort_cases_10yr')
+controls = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_cohort_controls_10yr')
+
+cases_30kgm2    = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_cohort_cases_30kgm2_10yr')
+controls_30kgm2 = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_cohort_controls_30kgm2_10yr')
+
+# Sensitivity analysis
+cases_5yr    = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_cohort_cases_30kgm2_5yr')
+controls_5yr = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_cohort_controls_30kgm2_5yr')
+
+# Another sensitivity analysis for looking at number of GP appointments
+gdppr = load_dataset_batch('gdppr')
+
+first_record = spark.table(f'{Project.dsa}.{Project.name}_tmp_earliest_medical_dates')
+
+# LSOA/MSOA mapping table
+# region_codes = spark.table(f'.hds_cur_lsoa_region_lookup')
+region_codes = spark.createDataFrame(
+    pd.read_csv('./codelists/lsoa_msoa_mapping.csv')
+    [['LSOA11CD', 'MSOA11CD']]
+).select(f.col('MSOA11CD').alias('msoa_code'), f.col('LSOA11CD').alias('lsoa_code'))
+
+# MSOA to LAC
+pdf = pd.read_csv(
+    "./codelists/msoa_lac_mapping.csv",
+    na_values=["NA"],
+    dtype=str,                # forces *every* column to be Python str/NaN
+)
+
+# 2) Optionally drop or fill NaNs in pandas:
+pdf = pdf[["MSOA11CD","LAD17CD","LAD17NM","LACCD","LACNM","LACLASS","TCITY15CD","TCITY15NM"]]
+
+# 3) Give Spark an explicit string-only schema
+schema = StructType([
+    StructField("MSOA11CD",   StringType(), True),
+    StructField("LAD17CD",    StringType(), True),
+    StructField("LAD17NM",    StringType(), True),
+    StructField("LACCD",      StringType(), True),
+    StructField("LACNM",      StringType(), True),
+    StructField("LACLASS",    StringType(), True),
+    StructField("TCITY15CD",  StringType(), True),
+    StructField("TCITY15NM",  StringType(), True),
+])
+
+lac_codes = spark.createDataFrame(pdf, schema=schema).withColumnRenamed('MSOA11CD', 'msoa')
+
+# MSOA to GDP per capita
+gdp_codes = (
+    spark.createDataFrame(
+        pd.read_csv('./codelists/msoa_gdp_mapping.csv')
+        [['LAD23CD', 'mean_gdp_per_capita', 'mean_gdp_per_capita_usd', 'gdp_per_capita_usd_grp', 'MSOA11CD', 'gdp_grp']]
+    )
+    .withColumn(
+        "gdp_grp_gbp",
+        f.when(f.col("mean_gdp_per_capita") >= 200000, "More_Than_200")
+        .when((f.col("mean_gdp_per_capita") >= 150000) & (f.col("mean_gdp_per_capita") < 200000), "150_To_200")
+        .when((f.col("mean_gdp_per_capita") >= 100000) & (f.col("mean_gdp_per_capita") < 150000), "100_To_150")
+        .when((f.col("mean_gdp_per_capita") >= 50000) & (f.col("mean_gdp_per_capita") < 100000), "50_To_100")
+        .when((f.col("mean_gdp_per_capita") >= 25000) & (f.col("mean_gdp_per_capita") < 50000), "25_To_50")
+        .when((f.col("mean_gdp_per_capita") >= 0) & (f.col("mean_gdp_per_capita") < 25000), "Less_Than_25")
+    )
+    .select(
+        f.col('MSOA11CD').alias('msoa'), #***REMOVED***'gdp_grp', 
+        f.col('gdp_grp_gbp').alias('gdp_grp')
+    )
+)
+
+# COMMAND ----------
+
+# MAGIC %md # 4. Prepare
+
+# COMMAND ----------
+
+# Earliest medical record dates
+first_record_1 = first_record.select('PERSON_ID', f.col('DATE').alias('GDPPR_EARLIEST'))
+
+# COMMAND ----------
+
+# DBTITLE 1,Join tables (ethnicity-specific)
+# Join cases and controls
+trends = (
+    skinny
+    .join(cases.drop('GDPPR_FIRST').unionByName(controls).select('PERSON_ID', 'cov_hx_first_obesity_date'), on='PERSON_ID', how='inner')
+    .join(first_record_1, on='PERSON_ID', how='left')
+    .join(region_codes.select(f.col('lsoa_code').alias('lsoa'), f.col('msoa_code').alias('msoa')), on='lsoa', how='left')
+    .join(lac_codes, on='msoa', how='left')
+    .join(gdp_codes, on='msoa', how='left')
+    .select(
+        'PERSON_ID', 'cov_hx_first_obesity_date', 'date_of_birth', 'date_of_death', 'sex', 'ethnicity_18_group',
+        'ethnicity_5_group', 'lsoa', 'msoa', 'LAD17CD', 'LAD17NM', 'LACCD', 'LACNM', 'LACLASS', 'TCITY15CD', 'TCITY15NM', 'region', 'imd_quintile', 'imd_decile', 'gdp_grp', 'GDPPR_EARLIEST'
+    )
+
+    #***REMOVED***Recode ethnicity
+    .withColumn(
+        'ethnicity_5_recoded', 
+        f.when(f.col('ethnicity_5_group').rlike('^White'), 'White')
+        .when(f.col('ethnicity_5_group').rlike('^Asian'), 'Asian')
+        .when(f.col('ethnicity_5_group').rlike('^Black'), 'Black')
+        .when(f.col('ethnicity_5_group').rlike('^Mixed|Other'), 'Mixed')
+        .otherwise(f.lit('Missing'))
+    )
+    .withColumn(
+        'ethnicity_18_recoded', 
+        f.when(f.col('ethnicity_18_group').rlike('^Brit|^Iris|^Trav|^Paki|^Indi|^Bang|^Chin|^Arab|^Afri|^Cari'), f.col('ethnicity_18_group'))
+        .when(f.col('ethnicity_18_group').rlike('^White and Asian$'), 'White_Asian')
+        .when(f.col('ethnicity_18_group').rlike('^White and Black Afric'), 'White_Black_African')
+        .when(f.col('ethnicity_18_group').rlike('^White and Black Carib'), 'White_Black_Caribbean')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Asi'), 'Asian_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Bla'), 'Black_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Whi'), 'White_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other mix'), 'Mixed_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other ethn'), 'Other')
+        .otherwise(f.lit('Missing'))
+    )
+
+    # Recode region
+    .withColumn(
+        'region_recoded',
+        f.when(f.col('region').rlike('York'), 'Yorkshire')
+        .when(f.col('region').rlike('West Mid'), 'West_Mid')
+        .when(f.col('region').rlike('East Mid'), 'East_Mid')
+        .when(f.col('region').rlike('East of'), 'East_Eng')
+        .when(f.col('region').rlike('London'), 'London')
+        .when(f.col('region').rlike('North East'), 'NE')
+        .when(f.col('region').rlike('North West'), 'NW')
+        .when(f.col('region').rlike('South East'), 'SE')
+        .when(f.col('region').rlike('South West'), 'SW')
+        .otherwise(f.lit('Missing'))
+    )
+
+    # Combined column(s) for mutual standardisation
+    .withColumn("combined_1lvl", f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile")))
+    .withColumn("combined_2lvl", f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile"), f.col("region_recoded")))
+    .withColumn(
+        "combined_3lvl",
+         f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile"), f.col("region_recoded"), f.col('LACLASS'))
+    )
+
+    .withColumn("combined_1lvl_18grp", f.concat_ws("_", f.col("ethnicity_18_recoded"), f.col("imd_quintile")))
+
+    # MSOA standardisation
+    .withColumn(
+        "msoa_eth_imd",
+         f.concat_ws("_", f.col("msoa"), f.col("ethnicity_5_recoded"), f.col("imd_quintile"))
+    )
+    
+    # Drop columns
+    .drop('ethnicity_18_group', 'ethnicity_5_group', 'region')
+
+    # Codes dates of turning 18 and 100
+    .withColumn('date_18', f.add_months(f.col('date_of_birth'), 18*12))
+    .withColumn('date_100', f.add_months(f.col('date_of_birth'), 100*12))
+
+    # Remove one day from the date of turning 100 so that individuals are censored on the last day of being 99
+    .withColumn('date_100', f.date_sub(f.col('date_100'), 1))
+
+    # Code entry and exit dates
+    .withColumn('entry_date', f.greatest(f.col('date_18'), f.col('GDPPR_EARLIEST'), f.to_date(f.lit(Project.study_start_date))))
+    .withColumn(
+        'exit_date',
+        f.least(f.col('date_of_death'), f.col('date_100'), f.to_date(f.lit(Project.study_end_date)))
+    )
+)
+
+temp_save(df=trends, out_name=f'{Project.name}_tmp_prevalence_data_10yr')
+
+# COMMAND ----------
+
+# DBTITLE 1,Join tables (same definition of obesity for all)
+# Join cases and controls
+trends_30kgm2 = (
+    skinny
+    .join(cases_30kgm2.drop('GDPPR_FIRST').unionByName(controls_30kgm2).select('PERSON_ID', 'cov_hx_first_obesity_30kgm2_date'), on='PERSON_ID', how='inner')
+    .join(first_record_1, on='PERSON_ID', how='left')
+    .join(region_codes.select(f.col('lsoa_code').alias('lsoa'), f.col('msoa_code').alias('msoa')), on='lsoa', how='left')
+    .join(lac_codes, on='msoa', how='left')
+    .join(gdp_codes, on='msoa', how='left')
+    .select(
+        'PERSON_ID', f.col('cov_hx_first_obesity_30kgm2_date').alias('cov_hx_first_obesity_date'), 'date_of_birth', 'date_of_death', 'sex', 'ethnicity_18_group', 'ethnicity_5_group', 'lsoa', 'msoa', 'gdp_grp', 'LAD17CD', 'LAD17NM', 'LACCD', 'LACNM', 'LACLASS', 'TCITY15CD', 'TCITY15NM', 'region', 'imd_quintile', 'imd_decile', 'GDPPR_EARLIEST'
+    )
+
+    #***REMOVED***Recode ethnicity
+    .withColumn(
+        'ethnicity_5_recoded', 
+        f.when(f.col('ethnicity_5_group').rlike('^White'), 'White')
+        .when(f.col('ethnicity_5_group').rlike('^Asian'), 'Asian')
+        .when(f.col('ethnicity_5_group').rlike('^Black'), 'Black')
+        .when(f.col('ethnicity_5_group').rlike('^Mixed|Other'), 'Mixed')
+        .otherwise(f.lit('Missing'))
+    )
+    .withColumn(
+        'ethnicity_18_recoded', 
+        f.when(f.col('ethnicity_18_group').rlike('^Brit|^Iris|^Trav|^Paki|^Indi|^Bang|^Chin|^Arab|^Afri|^Cari'), f.col('ethnicity_18_group'))
+        .when(f.col('ethnicity_18_group').rlike('^White and Asian$'), 'White_Asian')
+        .when(f.col('ethnicity_18_group').rlike('^White and Black Afric'), 'White_Black_African')
+        .when(f.col('ethnicity_18_group').rlike('^White and Black Carib'), 'White_Black_Caribbean')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Asi'), 'Asian_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Bla'), 'Black_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Whi'), 'White_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other mix'), 'Mixed_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other ethn'), 'Other')
+        .otherwise(f.lit('Missing'))
+    )
+
+    # Recode region
+    .withColumn(
+        'region_recoded',
+        f.when(f.col('region').rlike('York'), 'Yorkshire')
+        .when(f.col('region').rlike('West Mid'), 'West_Mid')
+        .when(f.col('region').rlike('East Mid'), 'East_Mid')
+        .when(f.col('region').rlike('East of'), 'East_Eng')
+        .when(f.col('region').rlike('London'), 'London')
+        .when(f.col('region').rlike('North East'), 'NE')
+        .when(f.col('region').rlike('North West'), 'NW')
+        .when(f.col('region').rlike('South East'), 'SE')
+        .when(f.col('region').rlike('South West'), 'SW')
+        .otherwise(f.lit('Missing'))
+    )
+
+    # Combined column(s) for mutual standardisation
+    .withColumn("combined_1lvl", f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile")))
+    .withColumn("combined_2lvl", f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile"), f.col("region_recoded")))
+    .withColumn(
+        "combined_3lvl",
+         f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile"), f.col("region_recoded"), f.col('LACLASS'))
+    )
+
+    .withColumn("combined_1lvl_18grp", f.concat_ws("_", f.col("ethnicity_18_recoded"), f.col("imd_quintile")))
+
+    # MSOA standardisation
+    .withColumn(
+        "msoa_eth_imd",
+         f.concat_ws("_", f.col("msoa"), f.col("ethnicity_5_recoded"), f.col("imd_quintile"))
+    )
+
+    # LAD17CD standardisation
+    .withColumn(
+        "lad_eth_imd",
+         f.concat_ws("_", f.col("LAD17CD"), f.col("ethnicity_5_recoded"), f.col("imd_quintile"))
+    )
+    
+    # Drop columns
+    .drop('ethnicity_18_group', 'ethnicity_5_group', 'region')
+
+    # Codes dates of turning 18 and 100
+    .withColumn('date_18', f.add_months(f.col('date_of_birth'), 18*12))
+    .withColumn('date_100', f.add_months(f.col('date_of_birth'), 100*12))
+
+    # Remove one day from the date of turning 100 so that individuals are censored on the last day of being 99
+    .withColumn('date_100', f.date_sub(f.col('date_100'), 1))
+
+    # Code entry and exit dates
+    .withColumn('entry_date', f.greatest(f.col('date_18'), f.col('GDPPR_EARLIEST'), f.to_date(f.lit(Project.study_start_date))))
+    .withColumn(
+        'exit_date',
+        f.least(f.col('date_of_death'), f.col('date_100'), f.to_date(f.lit(Project.study_end_date)))
+    )
+)
+
+temp_save(df=trends_30kgm2, out_name=f'{Project.name}_tmp_prevalence_data_30kgm2_10yr')
+
+# COMMAND ----------
+
+# Join cases and controls
+trends_30kgm2_5yr = (
+    skinny
+    .join(cases_5yr.drop('GDPPR_FIRST').unionByName(controls_5yr).select('PERSON_ID', 'cov_hx_first_obesity_30kgm2_date'), on='PERSON_ID', how='inner')
+    .join(first_record_1, on='PERSON_ID', how='left')
+    .join(region_codes.select(f.col('lsoa_code').alias('lsoa'), f.col('msoa_code').alias('msoa')), on='lsoa', how='left')
+    .join(lac_codes, on='msoa', how='left')
+    .join(gdp_codes, on='msoa', how='left')
+    .select(
+        'PERSON_ID', f.col('cov_hx_first_obesity_30kgm2_date').alias('cov_hx_first_obesity_date'), 'date_of_birth', 'date_of_death', 'sex', 'ethnicity_18_group', 'ethnicity_5_group', 'lsoa', 'msoa', 'gdp_grp', 'LAD17CD', 'LAD17NM', 'LACCD', 'LACNM', 'LACLASS', 'TCITY15CD', 'TCITY15NM', 'region', 'imd_quintile', 'imd_decile', 'GDPPR_EARLIEST'
+    )
+
+    #***REMOVED***Recode ethnicity
+    .withColumn(
+        'ethnicity_5_recoded', 
+        f.when(f.col('ethnicity_5_group').rlike('^White'), 'White')
+        .when(f.col('ethnicity_5_group').rlike('^Asian'), 'Asian')
+        .when(f.col('ethnicity_5_group').rlike('^Black'), 'Black')
+        .when(f.col('ethnicity_5_group').rlike('^Mixed|Other'), 'Mixed')
+        .otherwise(f.lit('Missing'))
+    )
+    .withColumn(
+        'ethnicity_18_recoded', 
+        f.when(f.col('ethnicity_18_group').rlike('^Brit|^Iris|^Trav|^Paki|^Indi|^Bang|^Chin|^Arab|^Afri|^Cari'), f.col('ethnicity_18_group'))
+        .when(f.col('ethnicity_18_group').rlike('^White and Asian$'), 'White_Asian')
+        .when(f.col('ethnicity_18_group').rlike('^White and Black Afric'), 'White_Black_African')
+        .when(f.col('ethnicity_18_group').rlike('^White and Black Carib'), 'White_Black_Caribbean')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Asi'), 'Asian_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Bla'), 'Black_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other Whi'), 'White_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other mix'), 'Mixed_Other')
+        .when(f.col('ethnicity_18_group').rlike('^Any other ethn'), 'Other')
+        .otherwise(f.lit('Missing'))
+    )
+
+    # Recode region
+    .withColumn(
+        'region_recoded',
+        f.when(f.col('region').rlike('York'), 'Yorkshire')
+        .when(f.col('region').rlike('West Mid'), 'West_Mid')
+        .when(f.col('region').rlike('East Mid'), 'East_Mid')
+        .when(f.col('region').rlike('East of'), 'East_Eng')
+        .when(f.col('region').rlike('London'), 'London')
+        .when(f.col('region').rlike('North East'), 'NE')
+        .when(f.col('region').rlike('North West'), 'NW')
+        .when(f.col('region').rlike('South East'), 'SE')
+        .when(f.col('region').rlike('South West'), 'SW')
+        .otherwise(f.lit('Missing'))
+    )
+
+    # Combined column(s) for mutual standardisation
+    .withColumn("combined_1lvl", f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile")))
+    .withColumn("combined_2lvl", f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile"), f.col("region_recoded")))
+    .withColumn(
+        "combined_3lvl",
+         f.concat_ws("_", f.col("ethnicity_5_recoded"), f.col("imd_quintile"), f.col("region_recoded"), f.col('LACLASS'))
+    )
+
+    .withColumn("combined_1lvl_18grp", f.concat_ws("_", f.col("ethnicity_18_recoded"), f.col("imd_quintile")))
+
+    # MSOA standardisation
+    .withColumn(
+        "msoa_eth_imd",
+         f.concat_ws("_", f.col("msoa"), f.col("ethnicity_5_recoded"), f.col("imd_quintile"))
+    )
+
+    # LAD17CD standardisation
+    .withColumn(
+        "lad_eth_imd",
+         f.concat_ws("_", f.col("LAD17CD"), f.col("ethnicity_5_recoded"), f.col("imd_quintile"))
+    )
+    
+    # Drop columns
+    .drop('ethnicity_18_group', 'ethnicity_5_group', 'region')
+
+    # Codes dates of turning 18 and 100
+    .withColumn('date_18', f.add_months(f.col('date_of_birth'), 18*12))
+    .withColumn('date_100', f.add_months(f.col('date_of_birth'), 100*12))
+
+    # Remove one day from the date of turning 100 so that individuals are censored on the last day of being 99
+    .withColumn('date_100', f.date_sub(f.col('date_100'), 1))
+
+    # Code entry and exit dates
+    .withColumn('entry_date', f.greatest(f.col('date_18'), f.col('GDPPR_EARLIEST'), f.to_date(f.lit(Project.study_start_date))))
+    .withColumn(
+        'exit_date',
+        f.least(f.col('date_of_death'), f.col('date_100'), f.to_date(f.lit(Project.study_end_date)))
+    )
+)
+
+temp_save(df=trends_30kgm2_5yr, out_name=f'{Project.name}_tmp_prevalence_data_30kgm2_5yr')
+
+# COMMAND ----------
+
+# DBTITLE 1,Reload
+trends            = spark.table(f'{Project.dsa}.{Project.name}_tmp_prevalence_data_10yr')
+trends_30kgm2     = spark.table(f'{Project.dsa}.{Project.name}_tmp_prevalence_data_30kgm2_10yr')
+trends_30kgm2_5yr = spark.table(f'{Project.dsa}.{Project.name}_tmp_prevalence_data_30kgm2_5yr')
+
+# COMMAND ----------
+
+# Prepare GDPPR 
+attendences = (
+    gdppr
+    .select('NHS_NUMBER_DEID', 'DATE')
+    .withColumnRenamed('NHS_NUMBER_DEID', 'PERSON_ID')
+    .filter((f.col('DATE') >= '2019-11-01') & (f.col('DATE') <= '2025-04-30'))
+    .distinct()
+)
+attendances = temp_save(df=attendences, out_name=f'{Project.name}_tmp_gdppr_attendances')
+
+# COMMAND ----------
+
+# DBTITLE 1,Reload attendances
+# Reload
+attendances = spark.table(f'{Project.dsa}.{Project.name}_tmp_gdppr_attendances')
+
+# COMMAND ----------
+
+# DBTITLE 1,Identify people who attend the GP at least once per year
+# Identify people who attend GP at least once every year
+t = (trends_30kgm2
+     .select("PERSON_ID",
+             f.to_date("entry_date").alias("entry_date"),
+             f.to_date("exit_date").alias("exit_date")))
+
+a = (attendances
+     .select("PERSON_ID", f.to_date("DATE").alias("visit_date")))
+
+# Keep only visits within follow-up window
+vis = (t.join(a, "PERSON_ID", "left")
+        .where((f.col("visit_date") >= f.col("entry_date")) &
+               (f.col("visit_date") <= f.col("exit_date"))))
+
+# Sort visits within patient and compute gaps
+w = w.partitionBy("PERSON_ID").orderBy("visit_date")
+
+vis_gaps = (vis
+    .withColumn("prev_visit", f.lag("visit_date").over(w))
+    .withColumn(
+        "gap_days",
+        f.when(f.col("prev_visit").isNull(),
+               f.datediff(f.col("visit_date"), f.col("entry_date")))  # entry -> first visit
+         .otherwise(F.datediff(F.col("visit_date"), f.col("prev_visit")))  # between visits
+    )
+)
+
+# Per patient: max gap among (entry->first, between visits) AND also check last->exit
+per_patient = (vis_gaps
+    .groupBy("PERSON_ID", "entry_date", "exit_date")
+    .agg(
+        f.count("*").alias("n_visits"),
+        f.max("gap_days").alias("max_gap_internal"),
+        f.max("visit_date").alias("last_visit")
+    )
+    .withColumn("gap_last_to_exit", f.datediff(F.col("exit_date"), f.col("last_visit")))
+    .withColumn("max_gap_overall", f.greatest("max_gap_internal", "gap_last_to_exit"))
+    .withColumn("meets_182_rule", (f.col("n_visits") > 0) & (f.col("max_gap_overall") <= 182.5))
+    .withColumn("meets_365_rule", (f.col("n_visits") > 0) & (f.col("max_gap_overall") <= 365))
+    .withColumn("meets_730_rule", (f.col("n_visits") > 0) & (f.col("max_gap_overall") <= 730))
+    .withColumn("meets_1095_rule", (f.col("n_visits") > 0) & (f.col("max_gap_overall") <= 1095))
+    .withColumn("meets_1460_rule", (f.col("n_visits") > 0) & (f.col("max_gap_overall") <= 1460))
+    .withColumn("meets_1825_rule", (f.col("n_visits") > 0) & (f.col("max_gap_overall") <= 1825))
+)
+
+result_a = (
+    t.join(per_patient.select("PERSON_ID", "meets_182_rule", "meets_365_rule", "meets_730_rule", "meets_1095_rule", "meets_1460_rule", "meets_1825_rule"), "PERSON_ID", "left")
+    .fillna({"meets_182_rule": False})
+    .fillna({"meets_365_rule": False})
+    .fillna({"meets_730_rule": False})
+    .fillna({"meets_1095_rule": False})
+    .fillna({"meets_1460_rule": False})
+    .fillna({"meets_1825_rule": False})
+)
+
+result_a = temp_save(df=result_a, out_name=f'{Project.name}_tmp_attends_gp_once_per_year')
+
+# COMMAND ----------
+
+# follow-up length in days (inclusive/exclusive choice: here it's inclusive-ish via datediff+1)
+t_fu = (t
+    .withColumn("fu_days", f.datediff(f.col("exit_date"), f.col("entry_date")) + f.lit(1))
+)
+
+# count visits in follow-up (re-use 'vis' but be careful: left join + where turns to inner)
+visit_counts = (t.join(a, "PERSON_ID", "left")
+    .where((f.col("visit_date") >= f.col("entry_date")) & (f.col("visit_date") <= f.col("exit_date")))
+    .groupBy("PERSON_ID")
+    .agg(F.count("*").alias("n_visits_in_fu"))
+)
+
+result_b = (t_fu.join(visit_counts, "PERSON_ID", "left")
+    .fillna({"n_visits_in_fu": 0})
+    .withColumn(
+        "avg_visits_per_365",
+        F.when(F.col("fu_days") > 0,
+               F.col("n_visits_in_fu") * F.lit(365.0) / F.col("fu_days"))
+         .otherwise(F.lit(None).cast("double"))
+    )
+)
+
+result_b = temp_save(df=result_b, out_name=f'{Project.name}_tmp_avg_attendances_per_year')
+
+# COMMAND ----------
+
+result_a = spark.table(f'{Project.dsa}.{Project.name}_tmp_attends_gp_once_per_year')
+result_b = spark.table(f'{Project.dsa}.{Project.name}_tmp_avg_attendances_per_year')
+
+# COMMAND ----------
+
+display(result_a)
+
+# COMMAND ----------
+
+trends_30kgm2 = (
+    trends_30kgm2
+    .join(result_a, on=['PERSON_ID', 'entry_date', 'exit_date'], how='left')
+    .join(result_b, on=['PERSON_ID', 'entry_date', 'exit_date'], how='left')
+)
+display(trends_30kgm2)
+
+# COMMAND ----------
+
+trends_30kgm2.where((f.col('entry_date') <= "2025-04-30") & (f.col('entry_date') <= f.col('exit_date')) & (f.col('meets_182_rule') == True)).count()
+
+# COMMAND ----------
+
+trends_30kgm2.where((f.col('entry_date') <= "2025-04-30") & (f.col('entry_date') <= f.col('exit_date')) & (f.col('meets_365_rule') == True)).count()
+
+# COMMAND ----------
+
+trends_30kgm2.where((f.col('entry_date') <= "2025-04-30") & (f.col('entry_date') <= f.col('exit_date')) & (f.col('meets_1825_rule') == True)).count()
+
+# COMMAND ----------
+
+trends_30kgm2.where((f.col('entry_date') <= "2025-04-30") & (f.col('entry_date') <= f.col('exit_date'))).count()
+
+# COMMAND ----------
+
+display(trends_30kgm2.where(f.col('entry_date') >= "2025-04-30"))
+
+# COMMAND ----------
+
+display(trends_30kgm2)
+
+# COMMAND ----------
+
+trends_30kgm2.where((f.col('entry_date') <= "2025-04-30") & (f.col('entry_date') <= f.col('exit_date'))).withColumn('fu', f.datediff(f.col('exit_date'), f.col('entry_date'))/365.25).select(f.sum("fu")).collect()[0][0]
+
+# COMMAND ----------
+
+# DBTITLE 1,Crude
+# all   = compute_prevalence(df=trends)
+# sex   = compute_prevalence(df=trends, by="sex")
+# eth5  = compute_prevalence(df=trends, by="ethnicity_5_recoded")
+# eth18 = compute_prevalence(df=trends, by="ethnicity_18_recoded")
+# reg   = compute_prevalence(df=trends, by="region_recoded")
+# imd   = compute_prevalence(df=trends, by="imd_quintile")
+# imd10 = compute_prevalence(df=trends, by="imd_decile")
+# lacl  = compute_prevalence(df=trends, by="LACLASS")
+msoa  = compute_prevalence(df=trends, by="msoa")
+comb1 = compute_prevalence(df=trends, by="combined_1lvl")
+gdp = compute_prevalence(df=trends, by="gdp_grp")
+msoa_eth_imd = compute_prevalence(df=trends, by="msoa_eth_imd")
+
+# all_30kgm2   = compute_prevalence(df=trends_30kgm2)
+# sex_30kgm2   = compute_prevalence(df=trends_30kgm2, by="sex")
+# eth5_30kgm2  = compute_prevalence(df=trends_30kgm2, by="ethnicity_5_recoded")
+# eth18_30kgm2 = compute_prevalence(df=trends_30kgm2, by="ethnicity_18_recoded")
+# reg_30kgm2   = compute_prevalence(df=trends_30kgm2, by="region_recoded")
+# imd_30kgm2   = compute_prevalence(df=trends_30kgm2, by="imd_quintile")
+# imd10_30kgm2 = compute_prevalence(df=trends_30kgm2, by="imd_decile")
+# lacl_30kgm2  = compute_prevalence(df=trends_30kgm2, by="LACLASS")
+msoa_30kgm2  = compute_prevalence(df=trends_30kgm2, by="msoa")
+comb1_30kgm2 = compute_prevalence(df=trends_30kgm2, by="combined_1lvl")
+gdp_30kgm2 = compute_prevalence(df=trends_30kgm2, by="gdp_grp")
+msoa_eth_imd_30kgm2 = compute_prevalence(df=trends_30kgm2, by="msoa_eth_imd")
+
+# COMMAND ----------
+
+# DBTITLE 1,Standardised
+# all_std   = compute_prevalence_standardised(df=trends)
+# eth5_std  = compute_prevalence_standardised(df=trends, by="ethnicity_5_recoded")
+# eth18_std = compute_prevalence_standardised(df=trends, by="ethnicity_18_recoded")
+# reg_std   = compute_prevalence_standardised(df=trends, by="region_recoded")
+# imd_std   = compute_prevalence_standardised(df=trends, by="imd_quintile")
+# imd10_std = compute_prevalence_standardised(df=trends, by="imd_decile")
+# lacl_std  = compute_prevalence_standardised(df=trends, by="LACLASS")
+msoa_std  = compute_prevalence_standardised(df=trends, by="msoa")
+comb1_std  = compute_prevalence_standardised(df=trends, by="combined_1lvl")
+gdp_std  = compute_prevalence_standardised(df=trends, by="gdp_grp")
+msoa_eth_imd_std = compute_prevalence_standardised(df=trends, by="msoa_eth_imd")
+
+# all_30kgm2_std   = compute_prevalence_standardised(df=trends_30kgm2)
+# eth5_30kgm2_std  = compute_prevalence_standardised(df=trends_30kgm2, by="ethnicity_5_recoded")
+# eth18_30kgm2_std = compute_prevalence_standardised(df=trends_30kgm2, by="ethnicity_18_recoded")
+# reg_30kgm2_std   = compute_prevalence_standardised(df=trends_30kgm2, by="region_recoded")
+# imd_30kgm2_std   = compute_prevalence_standardised(df=trends_30kgm2, by="imd_quintile")
+# imd10_30kgm2_std = compute_prevalence_standardised(df=trends_30kgm2, by="imd_decile")
+# lacl_30kgm2_std  = compute_prevalence_standardised(df=trends_30kgm2, by="LACLASS")
+msoa_30kgm2_std  = compute_prevalence_standardised(df=trends_30kgm2, by="msoa")
+comb1_30kgm2_std = compute_prevalence_standardised(df=trends_30kgm2, by="combined_1lvl")
+comb1_18grp_30kgm2_std = compute_prevalence_standardised(df=trends_30kgm2, by="combined_1lvl_18grp")
+gdp_30kgm2_std  = compute_prevalence_standardised(df=trends_30kgm2, by="gdp_grp")
+msoa_eth_imd_30kgm2_std = compute_prevalence_standardised(df=trends_30kgm2, by="msoa_eth_imd")
+lad_eth_imd_30kgm2_std  = compute_prevalence_standardised(df=trends_30kgm2, by="lad_eth_imd")
+
+comb1_30kgm2_5yr_std = compute_prevalence_standardised(df=trends_30kgm2_5yr, by="combined_1lvl")
+
+# COMMAND ----------
+
+# DBTITLE 1,Sensitivity analysis by GP attendance frequency
+trends_30kgm2_182  = trends_30kgm2.filter(f.col('meets_182_rule') == True)
+trends_30kgm2_365  = trends_30kgm2.filter(f.col('meets_365_rule') == True)
+trends_30kgm2_730  = trends_30kgm2.filter(f.col('meets_730_rule') == True)
+trends_30kgm2_1095 = trends_30kgm2.filter(f.col('meets_1095_rule') == True)
+trends_30kgm2_1460 = trends_30kgm2.filter(f.col('meets_1460_rule') == True)
+trends_30kgm2_1825 = trends_30kgm2.filter(f.col('meets_1825_rule') == True)
+
+comb1_30kgm2_std_182  = compute_prevalence_standardised(df=trends_30kgm2_182, by="combined_1lvl")
+comb1_30kgm2_std_365  = compute_prevalence_standardised(df=trends_30kgm2_365, by="combined_1lvl")
+comb1_30kgm2_std_730  = compute_prevalence_standardised(df=trends_30kgm2_730, by="combined_1lvl")
+comb1_30kgm2_std_1095 = compute_prevalence_standardised(df=trends_30kgm2_1095, by="combined_1lvl")
+comb1_30kgm2_std_1460 = compute_prevalence_standardised(df=trends_30kgm2_1460, by="combined_1lvl")
+comb1_30kgm2_std_1825 = compute_prevalence_standardised(df=trends_30kgm2_1825, by="combined_1lvl")
+
+# COMMAND ----------
+
+# MAGIC %md # 5. Prepare data for modelling (in RStudio)
+
+# COMMAND ----------
+
+# prevalence_date = '2025-04-01'
+# prevalence_30kgm2 = (
+#     trends_30kgm2
+#     .where((f.col('entry_date') <= prevalence_date) & (f.col('exit_date') > prevalence_date))
+#     .withColumn('study_start_age', f.datediff(f.lit(prevalence_date), f.col('date_of_birth'))/365.25)
+#     .withColumn(
+#         'prevalent_obesity',
+#         f.when(f.col('cov_hx_first_obesity_date') <= prevalence_date, 1)
+#         .otherwise(0)
+#     )
+#     # .withColumn(
+#     #     'imd_decile', 
+#     #     f.when(f.col('imd_decile') == 1, f.lit('1 (Most deprived)'))
+#     #      .when(f.col('imd_decile') == 10, f.lit('10 (Least deprived)'))
+#     #      .otherwise(f.col('imd_decile'))
+#     # )
+#    .select('person_id', 'prevalent_obesity', 'study_start_age', 'sex', 'imd_quintile', 'ethnicity_5_recoded') # , 'ethnicity_18_recoded'
+# )
+
+# display(prevalence_30kgm2)
+# save_table(prevalence_30kgm2, f'{Project.name}_export_ipd_prevalence_data_30kgm2_apr_2025')
+
+# COMMAND ----------
+
+# MAGIC %md # 6. Save
+
+# COMMAND ----------
+
+# DBTITLE 1,Crude
+# save_table(all, f'{Project.name}_export_prevalence_all')
+# save_table(sex, f'{Project.name}_export_prevalence_sex')
+# save_table(eth5, f'{Project.name}_export_prevalence_eth5')
+# save_table(eth18, f'{Project.name}_export_prevalence_eth18')
+# save_table(reg, f'{Project.name}_export_prevalence_reg')
+# save_table(imd, f'{Project.name}_export_prevalence_imd')
+# save_table(imd10, f'{Project.name}_export_prevalence_imd10')
+# save_table(lacl, f'{Project.name}_export_prevalence_lacl')
+save_table(msoa, f'{Project.name}_export_prevalence_msoa')
+save_table(comb1, f'{Project.name}_export_prevalence_comb1')
+save_table(gdp, f'{Project.name}_export_prevalence_gdp')
+save_table(msoa_eth_imd, f'{Project.name}_export_prevalence_msoa_eth_imd')
+
+# save_table(all_30kgm2, f'{Project.name}_export_prevalence_all_30kgm2')
+# save_table(sex_30kgm2, f'{Project.name}_export_prevalence_sex_30kgm2')
+# save_table(eth5_30kgm2, f'{Project.name}_export_prevalence_eth5_30kgm2')
+# save_table(eth18_30kgm2, f'{Project.name}_export_prevalence_eth18_30kgm2')
+# save_table(reg_30kgm2, f'{Project.name}_export_prevalence_reg_30kgm2')
+# save_table(imd_30kgm2, f'{Project.name}_export_prevalence_imd_30kgm2')
+# save_table(imd10_30kgm2, f'{Project.name}_export_prevalence_imd10_30kgm2')
+# save_table(lacl_30kgm2, f'{Project.name}_export_prevalence_lacl_30kgm2')
+save_table(msoa_30kgm2, f'{Project.name}_export_prevalence_msoa_30kgm2')
+save_table(comb1_30kgm2, f'{Project.name}_export_prevalence_comb1_30kgm2')
+save_table(gdp_30kgm2, f'{Project.name}_export_prevalence_gdp_30kgm2')
+save_table(msoa_eth_imd_30kgm2, f'{Project.name}_export_prevalence_msoa_eth_imd_30kgm2')
+
+# COMMAND ----------
+
+# DBTITLE 1,Standardised
+# save_table(all_std, f'{Project.name}_export_prevalence_all_std')
+# save_table(eth5_std, f'{Project.name}_export_prevalence_eth5_std')
+# save_table(eth18_std, f'{Project.name}_export_prevalence_eth18_std')
+# save_table(reg_std, f'{Project.name}_export_prevalence_reg_std')
+# save_table(imd_std, f'{Project.name}_export_prevalence_imd_std')
+# save_table(imd10_std, f'{Project.name}_export_prevalence_imd10_std')
+# save_table(lacl_std, f'{Project.name}_export_prevalence_lacl_std')
+# save_table(msoa_std, f'{Project.name}_export_prevalence_msoa_std')
+#***REMOVED***save_table(comb1_std, f'{Project.name}_export_prevalence_comb1_std')
+#***REMOVED***save_table(gdp_std, f'{Project.name}_export_prevalence_gdp_std')
+#***REMOVED***save_table(msoa_eth_imd_std, f'{Project.name}_export_prevalence_msoa_eth_imd_std')
+
+# save_table(all_30kgm2_std, f'{Project.name}_export_prevalence_all_30kgm2_std')
+# save_table(eth5_30kgm2_std, f'{Project.name}_export_prevalence_eth5_30kgm2_std')
+# save_table(eth18_30kgm2_std, f'{Project.name}_export_prevalence_eth18_30kgm2_std')
+# save_table(reg_30kgm2_std, f'{Project.name}_export_prevalence_reg_30kgm2_std')
+# save_table(imd_30kgm2_std, f'{Project.name}_export_prevalence_imd_30kgm2_std')
+# save_table(imd10_30kgm2_std, f'{Project.name}_export_prevalence_imd10_30kgm2_std')
+# save_table(lacl_30kgm2_std, f'{Project.name}_export_prevalence_lacl_30kgm2_std')
+save_table(msoa_30kgm2_std, f'{Project.name}_export_prevalence_msoa_30kgm2_std')
+save_table(comb1_30kgm2_std, f'{Project.name}_export_prevalence_comb1_30kgm2_std')
+save_table(comb1_18grp_30kgm2_std, f'{Project.name}_export_prevalence_comb1_18grp_30kgm2_std')
+save_table(gdp_30kgm2_std, f'{Project.name}_export_prevalence_gdp_30kgm2_std')
+save_table(msoa_eth_imd_30kgm2_std, f'{Project.name}_export_prevalence_msoa_eth_imd_30kgm2_std')
+#***REMOVED***save_table(lad_eth_imd_30kgm2_std, f'{Project.name}_export_prevalence_lad_eth_imd_30kgm2_std')
+
+save_table(comb1_30kgm2_5yr_std, f'{Project.name}_export_prevalence_comb1_30kgm2_5yr_std')
+
+# COMMAND ----------
+
+save_table(comb1_30kgm2_std_182, f'{Project.name}_export_prevalence_comb1_30kgm2_182_std')
+save_table(comb1_30kgm2_std_365, f'{Project.name}_export_prevalence_comb1_30kgm2_365_std')
+save_table(comb1_30kgm2_std_730, f'{Project.name}_export_prevalence_comb1_30kgm2_730_std')
+save_table(comb1_30kgm2_std_1095, f'{Project.name}_export_prevalence_comb1_30kgm2_1095_std')
+save_table(comb1_30kgm2_std_1460, f'{Project.name}_export_prevalence_comb1_30kgm2_1460_std')
+save_table(comb1_30kgm2_std_1825, f'{Project.name}_export_prevalence_comb1_30kgm2_1825_std')

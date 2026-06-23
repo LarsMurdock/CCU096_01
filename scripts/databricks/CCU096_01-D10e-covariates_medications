@@ -1,0 +1,95 @@
+# Databricks notebook source
+# MAGIC %md # CCU096_01-D10e-covariates_medications
+# MAGIC  
+# MAGIC **Description** This notebook creates the covariates which are longitudinal GLP1-RA use for individuals with incident obesity.
+# MAGIC  
+# MAGIC **Authors** Stelios Boulitsakis Logothetis
+# MAGIC
+# MAGIC 
+# MAGIC
+# MAGIC **Acknowledgements** Based on previous work by Carmen Petitjean, Spencer Keene for CCU004_03 and the Health Data Science Team, BHF Data Science Centre.
+# MAGIC
+# MAGIC **Data Output**
+# MAGIC - **`out_covariates_glp1ra`** : Medication covariates for the cohort.
+
+# COMMAND ----------
+
+# DBTITLE 1,Load libraries
+import pyspark.sql.functions as f
+import pyspark.sql.types as t
+import re
+
+from pyspark.sql.window import Window as w
+from functools import reduce
+
+# COMMAND ----------
+
+# DBTITLE 1,Source functions
+# MAGIC %run "shds/common/functions"
+
+# COMMAND ----------
+
+# MAGIC %run "./CCU096_01-D01-parameters"
+
+# COMMAND ----------
+
+# DBTITLE 1,Load data
+codelist_glp1ra = spark.createDataFrame(
+    pd.read_csv('./codelists/glp1ra_codelist.csv')
+    [['type', 'category', 'bnf_code', 'raw_name', 'standardised_name', 'product_name']]
+)
+
+inc_exc = spark.table(Paths.tmp_inc_exc_cohort_2)
+skinny  = spark.table(Paths.cur_skinny)
+pmeds = load_dataset_batch('pmeds')
+
+# COMMAND ----------
+
+display(codelist_glp1ra)
+
+# COMMAND ----------
+
+display(pmeds)
+
+# COMMAND ----------
+
+display(codelist_glp1ra.groupBy("standardised_name").agg(f.count("*")))
+
+# COMMAND ----------
+
+# DBTITLE 1,Prepare PMEDS
+pmeds_prepared = (
+    pmeds
+    # Reduce and rename columns
+    .select(['Person_ID_DEID', 'EPSPrescriptionID', 'ProcessingPeriodDate', 'PrescribedBNFCode', 'PrescribedBNFName', 'PrescribedFormulation', 'PrescribedMedicineStrength', 'PrescribedQuantity', 'PrescriberType', 'PrivatePrescriptionIndicator', 'PaidDrugStrength', 'PaidQuantity', 'PaidFormulation', 'NotDispensedIndicator', 'PrescribedSupplierName', 'ItemActualCost', 'CostCentreODSCode', 'CostCentreSubType', 'DispensedPharmacyLSOA', 'DispensedPharmacyODSCode'])
+    .filter(f.col("Person_ID_DEID").isNotNull())
+    .withColumnRenamed('Person_ID_DEID', 'PERSON_ID')
+    .withColumnRenamed('ProcessingPeriodDate', 'DATE')
+    .withColumnRenamed('PrescribedBNFCode', 'bnf_code')
+
+    # Inner join with GLP1-RA codelist
+    .join(codelist_glp1ra, on='bnf_code', how='inner')
+    # Left join with skinny table
+    .join(skinny, on='PERSON_ID', how='left')
+)
+
+# COMMAND ----------
+
+display(pmeds_prepared)
+
+# COMMAND ----------
+
+save_table(df=pmeds_prepared, out_name=f'{Project.name}_out_covariates_glp1ra', save_previous=True)
+
+# COMMAND ----------
+
+# DBTITLE 1,Check
+qc = (
+    pmeds
+    .select('PrescribedBNFCode', 'PrescribedBNFName')
+    .join(pmeds_prepared.select('PrescribedBNFName'), on='PrescribedBNFName', how='left_anti')
+    .where(f.col('PrescribedBNFName').rlike('Semagluti|Ozemp'))
+    .distinct()
+)
+
+display(qc)

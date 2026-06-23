@@ -1,0 +1,278 @@
+# Databricks notebook source
+# MAGIC %md # CCU096_01-D02e_codelist_CVD
+# MAGIC
+# MAGIC **Description** This notebook creates some of the codelists needed for CCU004_05: 
+# MAGIC  - Non-fatal and fatal CVD outcomes,
+# MAGIC  - CVD history
+# MAGIC
+# MAGIC **Authors** Stelios Boulitsakis Logothetis and Robert Fletcher
+# MAGIC
+# MAGIC 
+# MAGIC
+# MAGIC **Acknowledgements** Based on previous work by Carmen Petitjean, Spencer Keene for CCU004_03 and the Health Data Science Team, BHF Data Science Centre.
+# MAGIC
+# MAGIC **Data Output**
+# MAGIC - **`out_codelist_cvd_nonfatal`** : Codes to identify non-fatal CVD outcomes
+# MAGIC - **`out_codelist_cvd_fatal`** : Codes to identify fatal CVD outcomes
+# MAGIC - **`out_codelist_cvd_history`** : Codes to identify non-fatal CVD events for inclusion criteria. 
+
+# COMMAND ----------
+
+# MAGIC %md # 0. Setup
+
+# COMMAND ----------
+
+# DBTITLE 1,Libraries
+import pyspark.sql.functions as f
+import pandas as pd
+from typing import Dict 
+from pyspark.sql import DataFrame
+from functools import reduce
+
+# COMMAND ----------
+
+# DBTITLE 1,Common Functions
+# MAGIC %run "shds/common/functions"
+
+# COMMAND ----------
+
+# MAGIC %md # 1. Parameters
+
+# COMMAND ----------
+
+# MAGIC %run "./CCU096_01-D01-parameters"
+
+# COMMAND ----------
+
+# MAGIC %md # 2. Data Sources
+
+# COMMAND ----------
+
+# DBTITLE 1,Import reference tables
+icd10 = spark.table(Paths.ref_icd10)
+
+# COMMAND ----------
+
+# MAGIC %md # 3. Create
+# MAGIC
+# MAGIC Any data-driven code-lists should be derived here. Otherwise, we simply load each codelist from the relevant CSV file. 
+
+# COMMAND ----------
+
+# DBTITLE 1,Initialise results storage
+codelists_all: Dict[str, DataFrame] = dict()
+
+# COMMAND ----------
+
+# MAGIC %md ## 3.1. Outcome: Non-fatal CVD
+# MAGIC
+# MAGIC The SCORE2 specification uses a narrower code-list for non-fatal CVD events, and a broader one for fatal CVD events. First we derive the former, based on the following table:
+# MAGIC
+# MAGIC **SCORE2 Non-fatal Codelist**
+# MAGIC
+# MAGIC | Non-fatal cardiovascular disease | ICD10 | 
+# MAGIC | ----------- | ----------- | 
+# MAGIC | Non-fatal myocardial infarction | I21-I23 | 
+# MAGIC | Non-fatal stroke | I60-69 |
+# MAGIC
+# MAGIC | Excluded from the non-fatal CVD endpoint: | ICD10 | 
+# MAGIC | ----------- | ----------- | 
+# MAGIC | Myocarditis, unspecified | I51.4 | 
+# MAGIC | Subarachnoid hemorrhage | I60 | 
+# MAGIC | Subdural hemorrhage  | I62 |
+# MAGIC | Cerebral aneurysm  | I67.1 |
+# MAGIC | Cerebral arteritis  | I68.2 |
+# MAGIC | Moyamoya  | I67.5 |
+# MAGIC
+# MAGIC **Additional exclusions from CCU004_03**
+# MAGIC | Excluded from the non-fatal CVD endpoint: | ICD10 | 
+# MAGIC | ----------- | ----------- | 
+# MAGIC | Chronic ischaemic heart disease | I25 | 
+# MAGIC | Old myocardial infarction | I25.2 | 
+# MAGIC | Complications and ill defined dsecriptions of heart disease  | I51 |
+# MAGIC | Other cerebrovascular diseases  | I67 |
+# MAGIC | Cerebrovascular disorders in diseases classified elsewhere  | I68 |
+
+# COMMAND ----------
+
+# DBTITLE 1,Functions for deriving ICD-10 codelists
+from typing import Dict 
+from functools import reduce
+def icd10_codelist_from_conditions(conditions: Dict[str, Column]) -> DataFrame: 
+    """ Given a dictionary with covariate names as keys and boolean condition expressions as values,
+    Derives a codelist from the ICD-10 reference table based on these conditions, with the keys assigned as the covariate names. 
+    """
+    icd10_subsets = [
+        icd10.where(condition).withColumn('name', f.lit(name))
+        for name, condition in conditions.items()
+    ]
+    df =  reduce(DataFrame.unionByName, icd10_subsets)
+
+    # Re-format to fit our usual codelist format
+    return (
+        df
+        .drop('CODE')
+        .withColumnRenamed('ALT_CODE','code')
+        .withColumnRenamed('ICD10_DESCRIPTION', 'term')
+        .withColumn('terminology', f.lit('ICD10'))
+        .select('name', 'terminology', 'code', 'term')
+    )
+
+def cleanup_icd10(df):
+    # Remove trailing X's, decimal points, dashes, and spaces
+    df = (
+        df.withColumn('_code_old', f.col('code'))
+        .withColumn('code', f.when(f.col('terminology') == 'ICD10', f.regexp_replace('code', r'X$', '')).otherwise(f.col('code')))\
+        .withColumn('code', f.when(f.col('terminology') == 'ICD10', f.regexp_replace('code', r'[\.\-\s]', '')).otherwise(f.col('code')))
+        .withColumn('_code_diff', f.when(f.col('code') != f.col('_code_old'), 1).otherwise(0))
+    )
+    # Reformatted codes _code_diff == 1
+    print(f'Reformatted {df.select(f.sum("_code_diff")).collect()[0][0]} codes')
+    return df.drop('_code_old', '_code_diff')
+
+# COMMAND ----------
+
+# DBTITLE 1,Collect CVD ICD-10 codelist
+# First, ICD-10 codes for CVD
+cvd_nonfatal_conditions = {
+    # For MIs, get any codes with prefix I21, I22, I23
+    'nonfatal_myocardial_infarction': f.col('CODE').rlike('^(I21|I22|I23)'),
+    # For strokes, get any codes with prefix I60-I69
+    'nonfatal_stroke': f.col('ICD10_GROUP_HEADING') == "I60-I69"
+}
+
+# Manual exclusions. Some are from the SCORE2 specification, others are cleanup applied in CCU004_03
+cvd_icd10_exclusions_score2 = ['I514', 'I60', 'I62', 'I671', 'I682', 'I675']
+cvd_icd10_exclusions_ccu00403 = ['I25', 'I252', 'I51', 'I67', 'I68']
+cvd_icd10_exclusion_regex = f"^({'|'.join(cvd_icd10_exclusions_score2 + cvd_icd10_exclusions_ccu00403)})"
+
+derive_cvd_nonfatal_icd10 = cleanup_icd10(icd10_codelist_from_conditions(cvd_nonfatal_conditions))
+
+# We apply the exclusion criteria defined above. We intentionally don't apply them to the exclusion codelist
+codelist_cvd_nonfatal = derive_cvd_nonfatal_icd10.where(~f.col('code').rlike(cvd_icd10_exclusion_regex))
+
+codelists_all['cvd_nonfatal'] = codelist_cvd_nonfatal
+
+# COMMAND ----------
+
+# MAGIC %md We further define a CVD codelist for exclusion criteria. This is a superset of the endpoint codelist, and includes the following additional conditions:
+# MAGIC
+# MAGIC | Non-fatal cardiovascular disease | ICD10 | 
+# MAGIC | ----------- | ----------- | 
+# MAGIC | Peripheral artery disease | I70-I71 | 
+# MAGIC | TIA | G45 |
+# MAGIC | Non-fatal angina | I20 |
+# MAGIC | Ischaemic heart disease | I24-I25 |
+# MAGIC
+# MAGIC We also include the SNOMED codes for TIA from the phenotype library.
+
+# COMMAND ----------
+
+# DBTITLE 1,Collect CVD history ICD-10 codelist
+# ICD-10 codes for CVD exclusion criteria are a superset of the CVD endpoint codelist
+cvd_hx_conditions = cvd_nonfatal_conditions | {
+    # For peripheral artery disease, get any codes with prefix I70, I71
+    'peripheral_artery_disease': f.col('CODE').rlike("^(I70|I71)"),
+    # For transient ischaemic attacks, get any codes with prefix G45
+    'transient_ischaemic_attack': f.col('CODE').rlike("^(G45)"),
+    # For angina, get any codes with prefix I20
+    'nonfatal_angina': f.col('CODE').rlike("^(I20)"),
+    # For ischaemic heart disease, get any codes with prefix I24, I25
+    'ischaemic_heart_disease': f.col('CODE').rlike("^(I24|I25)")
+}
+
+codelist_cvd_hx = cleanup_icd10(icd10_codelist_from_conditions(cvd_hx_conditions))
+
+codelists_all['codelist_cvd_hx'] = codelist_cvd_hx
+
+# COMMAND ----------
+
+# MAGIC %md ## 3.2. Outcome: Fatal CVD
+# MAGIC
+# MAGIC **Protocol - Fatal Codelist**
+# MAGIC
+# MAGIC | Fatal cardiovascular disease | ICD10 | 
+# MAGIC | ----------- | ----------- | 
+# MAGIC | Hypertensive disease | I10-16 | 
+# MAGIC | Ischaemic heart disease | I20-25 |
+# MAGIC | Arrhythmias, heart failure | I46-52 |
+# MAGIC | Cerebrovascular disease | I60-69 |
+# MAGIC | Atherosclerosis/AAA | I70-73 |
+# MAGIC | Sudden death and death within 24h of symptom onset | R96.0-96.1 |
+# MAGIC
+# MAGIC These are the ICD-10 codes found in the protocol, matching those used in SCORE2 derivation. The exclusions are the same as the non-fatal CVD endpoint. We look up which patients have these in HES. CPJ advised the reason we only consider ICD-10 codes in HES and don't check for any CVD SNOMED codes in GDPPR is 
+# MAGIC   
+# MAGIC   - a) To match SCORE2, which was derived on hospital data
+# MAGIC   - b) CVD episodes are not usually coded in primary care 
+# MAGIC   - c) To catch more "severe" cases.
+
+# COMMAND ----------
+
+# DBTITLE 1,Import fatal CVD CSV
+cvd_fatal_conditions = {
+    'fatal_hypertensive_disease': f.col('ICD10_GROUP_HEADING') == 'I10-I15',
+    'fatal_ischaemic_heart_disease': f.col('ICD10_GROUP_HEADING') == 'I20-I25',
+    'fatal_arrythmias_heart_failure': f.col('CODE').rlike('^(I46|I47|I48|I49|I50|I51|I52)'),
+    'fatal_cerebrovascular_disease': f.col('ICD10_GROUP_HEADING') == 'I60-I69',
+    'fatal_atherosclerosis': f.col('CODE').rlike('^(I70|I71|I72|I73)'),
+    'fatal_sudden_death': f.col('CODE').startswith('R96')
+}
+
+codelist_cvd_fatal = cleanup_icd10(icd10_codelist_from_conditions(cvd_fatal_conditions)).where(~f.col('code').rlike(cvd_icd10_exclusion_regex))
+
+codelists_all['cvd_fatal'] = codelist_cvd_fatal
+
+# COMMAND ----------
+
+# MAGIC %md ## 3.2. History: CVD
+# MAGIC
+# MAGIC **Protocol - CVD History Codelist**
+# MAGIC
+# MAGIC | Established CVD History | ICD10 | 
+# MAGIC | ----------- | ----------- | 
+# MAGIC | Coronary Heart Disease | I20.0, I21-23, I25 | 
+# MAGIC | Stroke | I63, I65-66, I67.2, I69.3 |
+# MAGIC | TIA | G45, G45.3, G45.8, G45.9 |
+# MAGIC | AAA | I71.3-I71.9 |
+# MAGIC | PAD | I70 |
+
+# COMMAND ----------
+
+# DBTITLE 1,Import fatal CVD CSV
+cvd_history = {
+    'chd': f.col('CODE').rlike('^(I20.0|I21|I22|I23|I23)'),
+    'stroke': f.col('CODE').rlike('^(I63|I65|I66|I67.2|I69.3)'),
+    'tia': f.col('CODE').rlike('^(G45|G45.3|G45.8|G45.9)'),
+    'aaa': f.col('CODE').rlike('^(I71.3|I71.4|I71.5|I71.6|I71.8|I71.9)'),
+    'pad': f.col('CODE').rlike('^(I70)'),
+}
+
+codelist_cvd_history = cleanup_icd10(icd10_codelist_from_conditions(cvd_history))
+
+codelists_all['cvd_history'] = codelist_cvd_history
+
+# COMMAND ----------
+
+# MAGIC %md # 4. Check
+
+# COMMAND ----------
+
+# DBTITLE 1,Check format of output codelists
+count_nulls = lambda df: sum(df.select("*").where(f.col(_).isNull()).count() for _ in df.columns)
+required_columns = ['name', 'terminology', 'code', 'term']
+
+for key, codelist in codelists_all.items():
+    assert set(codelist.columns) == set(required_columns), f"Codelist {key} is either missing required columns or has extraneous ones"
+    assert codelist.count() > 0, f"Codelist {key} is empty" 
+    assert count_nulls(codelist) == 0, f'Codelist {key} contains NULLs'
+  
+
+# COMMAND ----------
+
+# MAGIC %md # 5. Save
+
+# COMMAND ----------
+
+save_table(df=codelist_cvd_nonfatal, out_name=f'{Project.name}_out_codelist_cvd_nonfatal', save_previous=False) 
+save_table(df=codelist_cvd_fatal, out_name=f'{Project.name}_out_codelist_cvd_fatal', save_previous=False)
+save_table(df=codelist_cvd_history, out_name=f'{Project.name}_out_codelist_cvd_history', save_previous=False) 

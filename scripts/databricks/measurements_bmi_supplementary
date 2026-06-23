@@ -1,0 +1,629 @@
+# Databricks notebook source
+# MAGIC %md 
+# MAGIC # BMI Supplementary Data
+# MAGIC
+# MAGIC Supplementes BMI data with deriving BMI from weight and height.
+# MAGIC
+# MAGIC #Methodology
+# MAGIC
+# MAGIC **GDPPR Data Cleaning**
+# MAGIC
+# MAGIC * Records that occur before a persons date of birth or after a persons date of death are removed (this means that in order to be included in this cohort a person must exist in the demographics table with a valid date of birth).
+# MAGIC * Minimum gender specific ages have been set (default age 18) and records recorded prior to these ages are removed (e.g. if male_min_age = 18, records that occurred prior to age 18 for a male are removed). This means that the imptued BMI asset/ time series will start no earler than these ages.
+# MAGIC
+# MAGIC **Height data cleaning**
+# MAGIC * A maximum height (height_max) has been set to 272cm
+# MAGIC * Heights below height_max/100 (2.72) are assumed to be in metres are converted to cm
+# MAGIC * A minimum height (height_min) is currently set at 50cm
+# MAGIC
+# MAGIC Height is also calculated in metres for consistency with BMI calculation.
+# MAGIC
+# MAGIC **Height forward and backward filling**
+# MAGIC
+# MAGIC Assumption: Adult height does not change
+# MAGIC * If most values agree, use the modal height (e.g. If ≥80% of height values for a person are the same, trust the mode); else, fallback to the mean. The modal height percentage is currently set at 80% (0.8).
+# MAGIC
+# MAGIC A dataset consisting of one height per person is produced.
+# MAGIC
+# MAGIC
+# MAGIC **Weight data cleaning**
+# MAGIC * A maximum weight (weight_max) has been set to 635kg
+# MAGIC * A minimum weight (weight_min) is currently set at 25kg
+# MAGIC * Where a person has more than one weight marker on the same day, the mean is imputed
+# MAGIC
+# MAGIC **Weight forward and backward filling**
+# MAGIC
+# MAGIC Assumption: Unlike height, weight **can** fluctuate gradually, but it typically doesn’t change drastically day-to-day.
+# MAGIC
+# MAGIC * No backfill is applied (we do not assume any value before a person’s first weight measurement)
+# MAGIC * Forward-fill assuming that the most recent measurement is valid until a new one is recorded
+# MAGIC
+# MAGIC
+# MAGIC **BMI**
+# MAGIC * For a persons BMI to be imputed (and thus a person to be included in this supplementary table) they must have at least one height AND at least one weight measurement recorded after the male_min_age/female_min_age/unknown_min_age. Those who only have height or weight are removed from the asset.
+# MAGIC * For each weight measurement, BMI is imputed based on the single height measurement calculated
+# MAGIC * Note that no (derived) BMI data cleaning has been applied (e.g. unlikely BMI values and outliers remain)
+# MAGIC
+# MAGIC
+# MAGIC **Individual start and end censor dates**
+# MAGIC
+# MAGIC * Coverage for height strictly begins in May 2018; however coverage for weight begins in 1952 (with coverage significantly increasing in May 2018) - the time series applied is person specifc with the time series beginning (CENSOR START) at the first weight record (post minimum age) for each person. Most time series will thus start at May 2018 but for some it may start earlier (do consider that weight is being forward filled and for those with records pre 2018 there may be a long period of time until the next recorded weight). If a person is alive their last known weight is recorded at the global max date of this time series (likely aligning with the archived on date of GDPPR); if a person has died their last known weight is recorded at their date of death.
+# MAGIC
+# MAGIC
+# MAGIC
+# MAGIC ## User Input Required
+# MAGIC
+# MAGIC Please also check height and weight SNOMED codelists are up to date and sufficient
+# MAGIC
+
+# COMMAND ----------
+
+# MAGIC %md # Setup and Data
+
+# COMMAND ----------
+
+import pyspark.sql.functions as f
+import pandas as pd
+import os
+from pyspark.sql.window import Window
+
+# COMMAND ----------
+
+# MAGIC %run /Workspace/Shared/SHDS/common/functions
+
+# COMMAND ----------
+
+# DBTITLE 1,USER INPUT
+# Select your GDPP archive version
+archive_version = f'2025-07-28'
+# Select your demographics version 
+demographics_version = f'2025_07_28'
+
+# save table date
+save_date = f'2025_07_28'
+
+# minimum ages stratified by gender (height records are not considered before these ages)
+male_min_age = 18
+female_min_age = 18
+unknown_min_age = 18 # if sex is recorded as I or null
+
+# Height min and max in cms
+height_max = 272
+height_min = 50
+
+# % of records that agree in order to take forward mode over mean as resolved height (set to 0 for mean only appraoch)
+height_modal_percentage = 0.8
+
+# Weight min and max in kg
+weight_max = 635
+weight_min = 25
+
+# COMMAND ----------
+
+db = ''
+dbc = f'{db}_collab'
+gdppr = spark.table(f'{dbc}.gdppr_{db}_archive').filter(f.col("archived_on")==archive_version)
+
+dsa = f''
+demographics = (
+    spark.table(f'{dsa}.hds_curated_assets__demographics_{demographics_version}')
+    # person must have a valid date of birth
+    .filter(f.col("date_of_birth").isNotNull())
+)
+
+# ensure gdppr only contains persons in the demographics table (with valid date of birth)
+gdppr = gdppr.join(
+    demographics.select("person_id"),
+    gdppr["NHS_NUMBER_DEID"] == demographics["person_id"],
+    how="inner"
+).drop(demographics["person_id"])
+
+# COMMAND ----------
+
+# convert ages to days
+male_days = male_min_age * 365
+female_days = female_min_age * 365
+unknown_days = unknown_min_age * 365
+
+# COMMAND ----------
+
+# dates may also be filtered to account for individual censor end dates or gdppr lag (last observable dates)
+gdppr_prepared = (
+
+  gdppr
+
+  .select(f.col('NHS_NUMBER_DEID').alias("PERSON_ID"), 'DATE', 'CODE', f.col('VALUE1_CONDITION').alias("VALUE"))
+  .filter(f.col('PERSON_ID').isNotNull())  
+  .filter(f.col('VALUE').isNotNull())
+  .withColumn("DATE", f.when((f.col("DATE") == "1800-01-01") | (f.col("DATE") == "1801-01-01"), None).otherwise(f.col("DATE")))
+  .filter(f.col('DATE').isNotNull())
+
+  # remove records that occur before the min gender specific ages
+  .join(demographics.select("person_id", "date_of_birth", "sex", "date_of_death"), on="PERSON_ID", how="inner")
+  .filter(
+    f.when(
+      f.col("sex") == "M", f.datediff(f.col("DATE"), f.col("date_of_birth")) >= male_days)
+    .when(
+      f.col("sex") == "F", f.datediff(f.col("DATE"), f.col("date_of_birth")) >= female_days)
+    .otherwise(
+      f.datediff(f.col("DATE"), f.col("date_of_birth")) >= unknown_days)
+    )
+
+    # remove records before date of birth or after date of death
+    .filter(f.col("DATE") >= f.col("date_of_birth"))
+    .filter((f.col("date_of_death").isNull()) | (f.col("DATE") <= f.col("date_of_death")))
+
+    .drop("date_of_birth","sex", "date_of_death")
+
+)
+
+# COMMAND ----------
+
+# codelists
+codelists_path = f'/Workspace{(os.path.dirname(dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()))}/codelists/'
+
+codelist_path_height = f'{codelists_path}height_snomed.csv'
+codelist_height_df = (
+    spark.createDataFrame(pd.read_csv(codelist_path_height, keep_default_na=False))
+    .select(f.regexp_replace("code", "^'", "").alias("CODE"))
+)
+
+codelist_path_weight = f'{codelists_path}weight_snomed.csv'
+codelist_weight_df = (
+    spark.createDataFrame(pd.read_csv(codelist_path_weight, keep_default_na=False))
+    .select(f.regexp_replace("code", "^'", "").alias("CODE"))
+)
+
+# COMMAND ----------
+
+height_unique_codes_list = [row['CODE'] for row in codelist_height_df.select("CODE").distinct().collect()]
+gdppr_height = (
+    gdppr_prepared
+    .filter(f.col("CODE").isin(height_unique_codes_list))
+    .select("PERSON_ID","DATE",f.col("VALUE").alias("HEIGHT"))
+    .distinct()
+)
+
+weight_unique_codes_list = [row['CODE'] for row in codelist_weight_df.select("CODE").distinct().collect()]
+gdppr_weight = (
+    gdppr_prepared
+    .filter(f.col("CODE").isin(weight_unique_codes_list))
+    .select("PERSON_ID","DATE",f.col("VALUE").alias("WEIGHT"))
+    .distinct()
+)
+
+# COMMAND ----------
+
+# Earliest and latest dates for height and weight
+min_date_height, max_date_height = gdppr_height.select(f.min("DATE"), f.max("DATE")).first()
+min_date_weight, max_date_weight = gdppr_weight.select(f.min("DATE"), f.max("DATE")).first()
+min_date = min(min_date_height, min_date_weight)
+max_date = max(max_date_height, max_date_weight)
+
+# COMMAND ----------
+
+# remove heights <=0
+gdppr_height_clean = gdppr_height.filter(f.col("HEIGHT") > 0)
+
+# COMMAND ----------
+
+# convert heights in metres to cm
+gdppr_height_clean = (
+    gdppr_height_clean
+    .withColumn("HEIGHT",
+                f.when(f.col("HEIGHT") < (height_min / 100), f.col("HEIGHT") * 100).otherwise(f.col("HEIGHT"))
+                )
+)
+
+# COMMAND ----------
+
+# remove heights above height max and below height min
+gdppr_height_clean = (
+    gdppr_height_clean
+    .filter(f.col("HEIGHT") <= height_max)
+    .filter(f.col("HEIGHT") >= height_min)
+    # get distinct measurements
+    .distinct()
+)
+
+# COMMAND ----------
+
+# Count how many times each height occurs per person
+gdppr_height_clean_count = (
+    gdppr_height_clean.select("PERSON_ID", "DATE", "HEIGHT").distinct()
+      .withColumn("total", f.count("*").over(Window.partitionBy("PERSON_ID")))
+      .withColumn("height_count", f.count("*").over(Window.partitionBy("PERSON_ID", "HEIGHT")))
+      .withColumn("height_ratio", f.col("height_count") / f.col("total"))
+)
+
+# Filter those where one height occurs >= height_modal_percentage (e.g. 80%) of the time
+height_mode = (
+    gdppr_height_clean_count
+    .filter(f.col("height_ratio") >= height_modal_percentage)
+    .orderBy("PERSON_ID", f.desc("height_count"))
+    .withColumn("row_number", f.row_number().over(Window.partitionBy("PERSON_ID").orderBy(f.desc("height_count"))))
+    .filter(f.col("row_number") == 1)
+    .select("PERSON_ID", "HEIGHT")
+    .withColumnRenamed("HEIGHT", "resolved_height")
+)
+
+# For others fallback to average
+height_avg = (
+    gdppr_height_clean_count.groupBy("PERSON_ID")
+    .agg(f.avg("HEIGHT").alias("resolved_height"))
+)
+
+# Combine (prioritising mode)
+height_final = (
+    height_mode.unionByName(height_avg, allowMissingColumns=True).dropDuplicates(["PERSON_ID"])
+    .withColumn("resolved_height_m", f.col("resolved_height")/100)
+)
+
+# COMMAND ----------
+
+# remove weights <=0
+gdppr_weight_clean = gdppr_weight.filter(f.col("WEIGHT") > 0)
+
+# COMMAND ----------
+
+# remove weights above weight max and below weight min
+gdppr_weight_clean = (
+    gdppr_weight_clean
+    .filter(f.col("WEIGHT") <= weight_max)
+    .filter(f.col("WEIGHT") >= weight_min)
+    # get distinct measurements
+    .distinct()
+    # impute mean for ties on same date
+    .withColumn("weight_count", f.count("WEIGHT").over(Window.partitionBy("PERSON_ID", "DATE")))
+      .withColumn("weight_mean", f.mean("WEIGHT").over(Window.partitionBy("PERSON_ID", "DATE")))
+      .withColumn(
+          "WEIGHT",
+          f.when(f.col("weight_count") > 1, f.col("weight_mean")).otherwise(f.col("WEIGHT"))
+      )
+      .drop("weight_count", "weight_mean")
+)
+
+# COMMAND ----------
+
+bmi_final = (
+    gdppr_weight_clean
+    .join(height_final, on="PERSON_ID", how="inner")
+    .withColumn("BMI", f.col("WEIGHT")/f.pow(f.col("resolved_height_m"),2))
+)
+
+# COMMAND ----------
+
+# censor starts (the first weight record per person)
+censor_starts = bmi_final.groupBy("PERSON_ID").agg(f.min("DATE").alias("censor_start")).distinct()
+
+# censor ends (date of death, else the global max date)
+censor_ends = (
+    bmi_final.join((demographics.select("PERSON_ID", "date_of_death")).withColumnRenamed("date_of_death", "censor_end"), on="PERSON_ID", how="left")
+    .select("PERSON_ID","censor_end")
+    .withColumn("censor_end", f.when(f.col("censor_end").isNotNull(), f.col("censor_end")).otherwise(max_date))
+    .distinct()
+    )
+
+bmi_final = (
+    bmi_final.join(censor_starts, on="PERSON_ID", how="inner").join(censor_ends, on="PERSON_ID", how="inner")
+)
+
+# COMMAND ----------
+
+save_table(bmi_final, f'hds_supplementary__bmi_{save_date}', save_previous=False)
+
+# COMMAND ----------
+
+bmi_final = spark.table(f'{dsa}.hds_supplementary__bmi_{save_date}')
+
+# COMMAND ----------
+
+display(bmi_final)
+
+# COMMAND ----------
+
+# no data cleaning has been applied to the derived BMI
+# records that are outwith realistic lower and upper limits may be removed (e.g. BMI readings <10 and >270)
+
+bmi_final_total = bmi_final.count()
+bmi_lower = bmi_final.filter(f.col("BMI") < 10).count()
+bmi_upper = bmi_final.filter(f.col("BMI") > 270).count()
+bmi_outliers = bmi_lower + bmi_upper
+bmi_outliers_percentage = round((bmi_outliers/bmi_final_total)*100,3)
+
+print(f'Total number of records: {bmi_final_total}')
+print(f'Number of records with BMI < 10: {bmi_lower}')
+print(f'Number of records with BMI > 270: {bmi_upper}')   
+print(f'Number of records with BMI outside limits (%): {bmi_outliers_percentage}')                
+
+# COMMAND ----------
+
+# MAGIC %md # Time Series
+
+# COMMAND ----------
+
+# explodes data into a time series (can be joined with a cohort for a BMI as at a given date)
+# bmi_time_series = (
+#     bmi_final
+#       .select("PERSON_ID", "censor_start", "censor_end") 
+#       .distinct()
+#       .withColumn("DATE", f.explode(f.sequence("censor_start", "censor_end")))
+#       .join(
+#           bmi_final.select("PERSON_ID", "DATE", "BMI").dropna(subset=["BMI"]),
+#           on=["PERSON_ID", "DATE"],
+#           how="left"
+#       )
+#       .withColumn("BMI_filled", f.last("BMI", ignorenulls=True).over(Window.partitionBy("PERSON_ID").orderBy("DATE").rowsBetween(Window.unboundedPreceding, 0)))
+#       .drop("censor_start","censor_end")
+# )
+
+# COMMAND ----------
+
+# display(bmi_time_series)
+
+# COMMAND ----------
+
+# MAGIC %run "./CCU096_01-D01-parameters"
+
+# COMMAND ----------
+
+## Add obesity prevalence data
+trends_30kgm2 = spark.table(f'{Project.dsa}.{Project.name}_tmp_prevalence_data_30kgm2_10yr')
+
+# COMMAND ----------
+
+bmi_any = (
+    bmi_final
+    .select('PERSON_ID', 'BMI')
+    .groupBy("PERSON_ID")
+    .agg(f.max(f.lit(1)).alias("has_BMI"))
+)
+
+# result = (
+#     df1
+#     .join(df2_any, on="PERSON_ID", how="left")
+
+#     .select("PERSON_ID", "BMI_missing")
+# )
+
+
+joined = (
+   trends_30kgm2
+   .select("PERSON_ID", "cov_hx_first_obesity_date", "date_of_birth", "entry_date", "exit_date", "sex", "imd_quintile", "ethnicity_5_recoded", "msoa")
+   .join(bmi_any, on='PERSON_ID', how='left')
+   .withColumn("BMI_missing", f.when(f.col("has_BMI").isNull(), "Y").otherwise("N"))
+   .withColumn(
+        "imd_quintile",
+        f.when(f.col("imd_quintile") == 1, "One")
+         .when(f.col("imd_quintile") == 2, "Two")
+         .when(f.col("imd_quintile") == 3, "Three")
+         .when(f.col("imd_quintile") == 4, "Four")
+         .when(f.col("imd_quintile") == 5, "Five")
+    )
+    .withColumn('study_start_age', f.datediff(f.col("entry_date"), f.col('date_of_birth'))/365.25)
+    .withColumn(
+        "age_grp",
+        f.when((f.col("study_start_age") >= 17.9) & (f.col("study_start_age") < 20), "18-19")
+         .when((f.col("study_start_age") >= 20) & (f.col("study_start_age") < 30), "20-29")
+         .when((f.col("study_start_age") >= 30) & (f.col("study_start_age") < 40), "30-39")
+         .when((f.col("study_start_age") >= 40) & (f.col("study_start_age") < 50), "40-49")
+         .when((f.col("study_start_age") >= 50) & (f.col("study_start_age") < 60), "50-59")
+         .when((f.col("study_start_age") >= 60) & (f.col("study_start_age") < 70), "60-69")
+         .when((f.col("study_start_age") >= 70) & (f.col("study_start_age") < 80), "70-79")
+         .when((f.col("study_start_age") >= 80) & (f.col("study_start_age") < 90), "80-89")
+         .when((f.col("study_start_age") >= 90) & (f.col("study_start_age") < 100), "90-99")
+         .otherwise("100+")
+    )
+    .where((f.col('entry_date') <= "2025-04-30") & (f.col('entry_date') <= f.col('exit_date')))
+    .drop("cov_hx_first_obesity_date", "has_bmi", "date_of_birth", "entry_date", "exit_date", "study_start_age")
+)
+display(joined)
+
+# COMMAND ----------
+
+display(joined.where(f.col('age_grp') == "100+"))
+
+# COMMAND ----------
+
+save_table(joined, f'{Project.name}_export_ipd_missing_bmi')
+
+# COMMAND ----------
+
+joined = spark.table(f'{Project.dsa}.{Project.name}_export_ipd_missing_bmi')
+joined = joined.withColumnRenamed('age_grp', 'age').withColumnRenamed('imd_quintile', 'imd').withColumnRenamed('ethnicity_5_recoded', 'ethnicity').where(f.col('ethnicity') != "Missing")
+
+# COMMAND ----------
+
+missing_summary_all = (
+    joined
+    .groupBy("BMI_missing")
+    .agg(f.countDistinct("PERSON_ID").alias("n"))
+    .groupBy()
+    .pivot("BMI_missing")   
+    .agg(f.first("n")) 
+    .withColumn('sex', f.lit('all'))
+    .withColumn('age', f.lit('all'))
+    .withColumn('imd', f.lit('all'))
+    .withColumn('ethnicity', f.lit('all'))
+)
+
+missing_summary_sex = (
+    joined
+    .groupBy("sex", "BMI_missing")
+    .agg(f.countDistinct("PERSON_ID").alias("n"))
+    .groupBy("sex")
+    .pivot("BMI_missing")   
+    .agg(f.first("n")) 
+    .withColumn('age', f.lit('all'))
+    .withColumn('imd', f.lit('all'))
+    .withColumn('ethnicity', f.lit('all'))
+)
+
+missing_summary_age = (
+    joined
+    .groupBy("age", "BMI_missing")
+    .agg(f.countDistinct("PERSON_ID").alias("n"))
+    .groupBy("age")
+    .pivot("BMI_missing")   
+    .agg(f.first("n")) 
+    .withColumn('sex', f.lit('all'))
+    .withColumn('imd', f.lit('all'))
+    .withColumn('ethnicity', f.lit('all'))
+)
+
+missing_summary_imd = (
+    joined
+    .groupBy("imd", "BMI_missing")
+    .agg(f.countDistinct("PERSON_ID").alias("n"))
+    .groupBy("imd")
+    .pivot("BMI_missing")   
+    .agg(f.first("n")) 
+    .withColumn('sex', f.lit('all'))
+    .withColumn('age', f.lit('all'))
+    .withColumn('ethnicity', f.lit('all'))
+)
+
+missing_summary_ethnicity = (
+    joined
+    .groupBy("ethnicity", "BMI_missing")
+    .agg(f.countDistinct("PERSON_ID").alias("n"))
+    .groupBy("ethnicity")
+    .pivot("BMI_missing")   
+    .agg(f.first("n")) 
+    .withColumn('sex', f.lit('all'))
+    .withColumn('age', f.lit('all'))
+    .withColumn('imd', f.lit('all'))
+)
+
+missing_summary_age_sex = (
+    joined
+    .groupBy("sex", "age", "BMI_missing")
+    .agg(f.countDistinct("PERSON_ID").alias("n"))
+    .groupBy("sex", "age")
+    .pivot("BMI_missing")   
+    .agg(f.first("n")) 
+    .withColumn('imd', f.lit('all'))
+    .withColumn('ethnicity', f.lit('all'))
+)
+
+missing_summary_age_imd = (
+    joined
+    .groupBy("age", "imd", "BMI_missing")
+    .agg(f.countDistinct("PERSON_ID").alias("n"))
+    .groupBy("age", "imd")
+    .pivot("BMI_missing")   
+    .agg(f.first("n")) 
+    .withColumn('ethnicity', f.lit('all'))
+    .withColumn('sex', f.lit('all'))
+)
+
+missing_summary_age_ethnicity = (
+    joined
+    .groupBy("ethnicity", "age", "BMI_missing")
+    .agg(f.countDistinct("PERSON_ID").alias("n"))
+    .groupBy("ethnicity", "age")
+    .pivot("BMI_missing")   
+    .agg(f.first("n")) 
+    .withColumn('imd', f.lit('all'))
+    .withColumn('sex', f.lit('all'))
+)
+
+missing_summary_sex_imd = (
+    joined
+    .groupBy("sex", "imd", "BMI_missing")
+    .agg(f.countDistinct("PERSON_ID").alias("n"))
+    .groupBy("sex", "imd")
+    .pivot("BMI_missing")   
+    .agg(f.first("n")) 
+    .withColumn('age', f.lit('all'))
+    .withColumn('ethnicity', f.lit('all'))
+)
+
+missing_summary_sex_ethnicity = (
+    joined
+    .groupBy("sex", "ethnicity", "BMI_missing")
+    .agg(f.countDistinct("PERSON_ID").alias("n"))
+    .groupBy("sex", "ethnicity")
+    .pivot("BMI_missing")   
+    .agg(f.first("n")) 
+    .withColumn('age', f.lit('all'))
+    .withColumn('imd', f.lit('all'))
+)
+
+missing_summary_ethnicity_imd = (
+    joined
+    .groupBy("ethnicity", "imd", "BMI_missing")
+    .agg(f.countDistinct("PERSON_ID").alias("n"))
+    .groupBy("ethnicity", "imd")
+    .pivot("BMI_missing")   
+    .agg(f.first("n")) 
+    .withColumn('age', f.lit('all'))
+    .withColumn('sex', f.lit('all'))
+)
+
+missing_summary_age_sex_imd = (
+    joined
+    .groupBy("age", "sex", "imd", "BMI_missing")
+    .agg(f.countDistinct("PERSON_ID").alias("n"))
+    .groupBy("age", "sex", "imd")
+    .pivot("BMI_missing")   
+    .agg(f.first("n")) 
+    .withColumn('ethnicity', f.lit('all'))
+)
+
+missing_summary_age_sex_ethnicity = (
+    joined
+    .groupBy("age", "sex", "ethnicity", "BMI_missing")
+    .agg(f.countDistinct("PERSON_ID").alias("n"))
+    .groupBy("age", "sex", "ethnicity")
+    .pivot("BMI_missing")   
+    .agg(f.first("n")) 
+    .withColumn('imd', f.lit('all'))
+)
+
+missing_summary_age_imd_ethnicity = (
+    joined
+    .groupBy("age", "imd", "ethnicity", "BMI_missing")
+    .agg(f.countDistinct("PERSON_ID").alias("n"))
+    .groupBy("age", "imd", "ethnicity")
+    .pivot("BMI_missing")   
+    .agg(f.first("n")) 
+    .withColumn('sex', f.lit('all'))
+)
+
+missing_summary_sex_imd_ethnicity = (
+    joined
+    .groupBy("sex", "imd", "ethnicity", "BMI_missing")
+    .agg(f.countDistinct("PERSON_ID").alias("n"))
+    .groupBy("sex", "imd", "ethnicity")
+    .pivot("BMI_missing")   
+    .agg(f.first("n")) 
+    .withColumn('age', f.lit('all'))
+)
+
+missing_summary_age_sex_imd_ethnicity = (
+    joined
+    .groupBy("age", "sex", "imd", "ethnicity", "BMI_missing")
+    .agg(f.countDistinct("PERSON_ID").alias("n"))
+    .groupBy("age", "sex", "imd", "ethnicity")
+    .pivot("BMI_missing")   
+    .agg(f.first("n"))
+)
+
+# COMMAND ----------
+
+from functools import reduce
+
+dfs = [v for k, v in globals().items() if k.startswith("missing_summary_")]
+
+combined = reduce(
+    lambda a, b: a.unionByName(b, allowMissingColumns=True),
+    dfs
+).withColumn('denominator',  f.col("N") + f.col("Y")).withColumn('percentage',  f.col("Y") / f.col("denominator") * 100)
+
+combined2 = combined.drop('N', 'Y', 'denominator')
+display(combined2)
+
+# COMMAND ----------
+
+save_table(combined2, f'{Project.name}_export_missing_data_summary')

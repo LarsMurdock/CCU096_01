@@ -1,0 +1,126 @@
+,code,term,smoking_status,severity
+0,160603005,Light cigarette smoker (1-9 cigs/day) (finding),Current-smoker,Light
+1,160606002,Very heavy cigarette smoker (40+ cigs/day) (finding),Current-smoker,Heavy
+2,160613002,Admitted tobacco consumption possibly untrue (finding),Current-smoker,Unknown
+3,160619003,Rolls own cigarettes (finding),Current-smoker,Unknown
+4,230056004,Cigarette consumption (observable entity),Current-smoker,Unknown
+5,230057008,Cigar consumption (observable entity),Current-smoker,Unknown
+6,230058003,Pipe tobacco consumption (observable entity),Current-smoker,Unknown
+7,230060001,Light cigarette smoker (finding),Current-smoker,Light
+8,230062009,Moderate cigarette smoker (finding),Current-smoker,Moderate
+9,230065006,Chain smoker (finding),Current-smoker,Heavy
+10,266918002,Tobacco smoking consumption (observable entity),Current-smoker,Unknown
+11,446172000,Failed attempt to stop smoking (finding),Current-smoker,Unknown
+12,449868002,Smokes tobacco daily (finding),Current-smoker,Unknown
+13,56578002,Moderate smoker (20 or less per day) (finding),Current-smoker,Moderate
+14,56771006,Heavy smoker (over 20 per day) (finding),Current-smoker,Heavy
+15,59978006,Cigar smoker (finding),Current-smoker,Unknown
+16,65568007,Cigarette smoker (finding),Current-smoker,Unknown
+17,134406006,Smoking reduced (finding),Current-smoker,Unknown
+18,160604004,Moderate cigarette smoker (10-19 cigs/day) (finding),Current-smoker,Moderate
+19,160605003,Heavy cigarette smoker (20-39 cigs/day) (finding),Current-smoker,Heavy
+20,160612007,Keeps trying to stop smoking (finding),Current-smoker,Unknown
+21,160616005,Trying to give up smoking (finding),Current-smoker,Unknown
+22,203191000000107,Wants to stop smoking (finding),Current-smoker,Unknown
+23,225934006,Smokes in bed (finding),Current-smoker,Unknown
+24,230059006,Occasional cigarette smoker (finding),Current-smoker,Light
+25,230063004,Heavy cigarette smoker (finding),Current-smoker,Heavy
+26,230064005,Very heavy cigarette smoker (finding),Current-smoker,Heavy
+27,266920004,Trivial cigarette smoker (less than one cigarette/day) (finding),Current-smoker,Light
+28,266929003,Smoking started (finding),Current-smoker,Unknown
+29,308438006,Smoking restarted (finding),Current-smoker,Unknown
+30,394871007,Thinking about stopping smoking (finding),Current-smoker,Unknown
+31,394872000,Ready to stop smoking (finding),Current-smoker,Unknown
+32,394873005,Not interested in stopping smoking (finding),Current-smoker,Unknown
+33,401159003,Reason for restarting smoking (observable entity),Current-smoker,Unknown
+34,413173009,Minutes from waking to first tobacco consumption (observable entity),Current-smoker,Unknown
+35,428041000124106,Occasional tobacco smoker (finding),Current-smoker,Light
+36,77176002,Smoker (finding),Current-smoker,Unknown
+37,82302008,Pipe smoker (finding),Current-smoker,Unknown
+38,836001000000109,Waterpipe tobacco consumption (observable entity),Current-smoker,Unknown
+39,160603005,Light cigarette smoker (1-9 cigs/day) (finding),Current-smoker,Light
+40,160612007,Keeps trying to stop smoking (finding),Current-smoker,Unknown
+41,160613002,Admitted tobacco consumption possibly untrue (finding),Current-smoker,Unknown
+42,160616005,Trying to give up smoking (finding),Current-smoker,Unknown
+43,160619003,Rolls own cigarettes (finding),Current-smoker,Unknown
+44,225934006,Smokes in bed (finding),Current-smoker,Unknown
+45,230056004,Cigarette consumption (observable entity),Current-smoker,Unknown
+46,230057008,Cigar consumption (observable entity),Current-smoker,Unknown
+47,230059006,Occasional cigarette smoker (finding),Current-smoker,Light
+48,230060001,Light cigarette smoker (finding),Current-smoker,Light
+49,230062009,Moderate cigarette smoker (finding),Current-smoker,Moderate
+50,230063004,Heavy cigarette smoker (finding),Current-smoker,Heavy
+51,230064005,Very heavy cigarette smoker (finding),Current-smoker,Heavy
+52,266920004,Trivial cigarette smoker (less than one cigarette/day) (finding),Current-smoker,Light
+53,266929003,Smoking started (finding),Current-smoker,Unknown
+54,394872000,Ready to stop smoking (finding),Current-smoker,Unknown
+55,401159003,Reason for restarting smoking (observable entity),Current-smoker,Unknown
+56,449868002,Smokes tobacco daily (finding),Current-smoker,Unknown
+57,65568007,Cigarette smoker (finding),Current-smoker,Unknown
+58,134406006,Smoking reduced (finding),Current-smoker,Unknown
+59,160604004,Moderate cigarette smoker (10-19 cigs/day) (finding),Current-smoker,Moderate
+60,160605003,Heavy cigarette smoker (20-39 cigs/day) (finding),Current-smoker,Heavy
+61,160606002,Very heavy cigarette smoker (40+ cigs/day) (finding),Current-smoker,Heavy
+62,203191000000107,Wants to stop smoking (finding),Current-smoker,Unknown
+63,308438006,Smoking restarted (finding),Current-smoker,Unknown
+64,394871007,Thinking about stopping smoking (finding),Current-smoker,Unknown
+65,394873005,Not interested in stopping smoking (finding),Current-smoker,Unknown
+66,401201003,Cigarette pack-years (observable entity),Current-smoker,Unknown
+67,413173009,Minutes from waking to first tobacco consumption (observable entity),Current-smoker,Unknown
+68,428041000124106,Occasional tobacco smoker (finding),Current-smoker,Light
+69,446172000,Failed attempt to stop smoking (finding),Current-smoker,Unknown
+70,56578002,Moderate smoker (20 or less per day) (finding),Current-smoker,Moderate
+71,56771006,Heavy smoker (over 20 per day) (finding),Current-smoker,Heavy
+72,59978006,Cigar smoker (finding),Current-smoker,Unknown
+73,77176002,Smoker (finding),Current-smoker,Unknown
+74,82302008,Pipe smoker (finding),Current-smoker,Unknown
+75,836001000000109,Waterpipe tobacco consumption (observable entity),Current-smoker,Unknown
+76,53896009,Tolerant ex-smoker (finding),Ex-smoker,Unknown
+77,1092041000000104,Ex-very heavy smoker (40+/day) (finding),Ex-smoker,Unknown
+78,1092091000000109,Ex-moderate smoker (10-19/day) (finding),Ex-smoker,Unknown
+79,160620009,Ex-pipe smoker (finding),Ex-smoker,Unknown
+80,160621008,Ex-cigar smoker (finding),Ex-smoker,Unknown
+81,228486009,Time since stopped smoking (observable entity),Ex-smoker,Unknown
+82,266921000,Ex-trivial cigarette smoker (<1/day) (finding),Ex-smoker,Unknown
+83,266922007,Ex-light cigarette smoker (1-9/day) (finding),Ex-smoker,Unknown
+84,266923002,Ex-moderate cigarette smoker (10-19/day) (finding),Ex-smoker,Unknown
+85,266928006,Ex-cigarette smoker amount unknown (finding),Ex-smoker,Unknown
+86,281018007,Ex-cigarette smoker (finding),Ex-smoker,Unknown
+87,735128000,Ex-smoker for less than 1 year (finding),Ex-smoker,Unknown
+88,8517006,Ex-smoker (finding),Ex-smoker,Unknown
+89,1092031000000108,Ex-smoker amount unknown (finding),Ex-smoker,Unknown
+90,1092071000000105,Ex-heavy smoker (20-39/day) (finding),Ex-smoker,Unknown
+91,1092111000000104,Ex-light smoker (1-9/day) (finding),Ex-smoker,Unknown
+92,1092131000000107,Ex-trivial smoker (<1/day) (finding),Ex-smoker,Unknown
+93,160617001,Stopped smoking (finding),Ex-smoker,Unknown
+94,160625004,Date ceased smoking (observable entity),Ex-smoker,Unknown
+95,266924008,Ex-heavy cigarette smoker (20-39/day) (finding),Ex-smoker,Unknown
+96,266925009,Ex-very heavy cigarette smoker (40+/day) (finding),Ex-smoker,Unknown
+97,360890004,Intolerant ex-smoker (finding),Ex-smoker,Unknown
+98,360900008,Aggressive ex-smoker (finding),Ex-smoker,Unknown
+99,48031000119106,Ex-smoker for more than 1 year (finding),Ex-smoker,Unknown
+100,492191000000103,Ex roll-up cigarette smoker (finding),Ex-smoker,Unknown
+101,53896009,Tolerant ex-smoker (finding),Ex-smoker,Unknown
+102,735112005,Date ceased using moist tobacco (observable entity),Ex-smoker,Unknown
+103,228486009,Time since stopped smoking (observable entity),Ex-smoker,Unknown
+104,266921000,Ex-trivial cigarette smoker (<1/day) (finding),Ex-smoker,Unknown
+105,266923002,Ex-moderate cigarette smoker (10-19/day) (finding),Ex-smoker,Unknown
+106,266928006,Ex-cigarette smoker amount unknown (finding),Ex-smoker,Unknown
+107,360900008,Aggressive ex-smoker (finding),Ex-smoker,Unknown
+108,492191000000103,Ex roll-up cigarette smoker (finding),Ex-smoker,Unknown
+109,735112005,Date ceased using moist tobacco (observable entity),Ex-smoker,Unknown
+110,735128000,Ex-smoker for less than 1 year (finding),Ex-smoker,Unknown
+111,160617001,Stopped smoking (finding),Ex-smoker,Unknown
+112,160620009,Ex-pipe smoker (finding),Ex-smoker,Unknown
+113,160621008,Ex-cigar smoker (finding),Ex-smoker,Unknown
+114,266922007,Ex-light cigarette smoker (1-9/day) (finding),Ex-smoker,Unknown
+115,266924008,Ex-heavy cigarette smoker (20-39/day) (finding),Ex-smoker,Unknown
+116,266925009,Ex-very heavy cigarette smoker (40+/day) (finding),Ex-smoker,Unknown
+117,281018007,Ex-cigarette smoker (finding),Ex-smoker,Unknown
+118,360890004,Intolerant ex-smoker (finding),Ex-smoker,Unknown
+119,48031000119106,Ex-smoker for more than 1 year (finding),Ex-smoker,Unknown
+120,8517006,Ex-smoker (finding),Ex-smoker,Unknown
+121,221000119102,Never smoked any substance (finding),Never-smoker,None
+122,266919005,Never smoked tobacco (finding),Never-smoker,None
+123,221000119102,Never smoked any substance (finding),Never-smoker,None
+124,266919005,Never smoked tobacco (finding),Never-smoker,None

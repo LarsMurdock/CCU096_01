@@ -1,0 +1,1064 @@
+# Databricks notebook source
+import pyspark.sql.functions as f
+from functools import reduce
+import datetime
+
+def compute_days_at_risk_individual(
+    month_str: str,
+    year_str: str,
+    start_str: str,
+    end_str: str,
+    cov_hx_col: str = "cov_hx_first_obesity_date",
+    death_col: str = "date_of_death",
+    date90_col: str = "date_90",
+    date18_col: str = "date_18",
+    gdppr_col: str = "gdppr_earliest"
+) -> f.Column:
+    """
+    Returns a PySpark Column expression that computes the days at risk
+    for each row, given a particular month/year, and start/end boundaries.
+    """
+    # 1. Construct the start of the chosen month, e.g. "2020-Jan-01"
+    month_start = f.to_date(f.lit(f"{year_str}-{month_str}-01"), "yyyy-MMM-dd")
+
+    # 2. End of that month: add 1 month, subtract 1 day
+    month_end = f.date_sub(f.add_months(month_start, 1), 1)
+
+    # 3. pmin(...) ignoring nulls by coalescing to a "far-future" date
+    at_risk_end = f.array_min(f.array(
+        f.coalesce(f.col(cov_hx_col), f.lit("9999-12-31")),
+        f.coalesce(f.col(death_col),  f.lit("9999-12-31")),
+        f.lit(end_str),  # e.g. "2024-06-31"
+        f.coalesce(f.col(date90_col), f.lit("9999-12-31")),
+        month_end
+    ))
+
+    # 4. pmax(...) ignoring nulls by coalescing to a "far-past" date
+    at_risk_start = f.array_max(f.array(
+        f.lit(start_str),  # e.g. "2020-01-01"
+        f.coalesce(f.col(date18_col), f.lit("0001-01-01")),
+        f.coalesce(f.col(gdppr_col),  f.lit("0001-01-01")),
+        month_start
+    ))
+
+    # 5. days = pmax(datediff(end, start)+1, 0)
+    days_expr = f.greatest(
+        f.datediff(at_risk_end, at_risk_start) + 1,
+        f.lit(0)
+    )
+
+    return days_expr
+
+# COMMAND ----------
+
+# Databricks notebook source
+import pyspark.sql.functions as f
+from functools import reduce
+import datetime
+
+def compute_days_at_risk_individual_age(
+    month_str: str,
+    year_str: str,
+    start_str: str,
+    end_str: str,
+    cov_hx_col: str = "cov_hx_first_obesity_date",
+    death_col: str = "date_of_death",
+    date90_col: str = "date_90",
+    date18_col: str = "date_18",
+    gdppr_col: str = "gdppr_earliest",
+    dob_col: str = "date_of_birth"            # <--- NEW PARAM
+) -> f.Column:
+    """
+    Returns a PySpark Column (struct) that contains:
+      1) The days at risk (days_expr)
+      2) The integer age at at_risk_start (age_at_risk_start).
+    """
+    # 1. Construct the start of the chosen month, e.g. "2020-Jan-01"
+    month_start = f.to_date(f.lit(f"{year_str}-{month_str}-01"), "yyyy-MMM-dd")
+
+    # 2. End of that month: add 1 month, subtract 1 day
+    month_end = f.date_sub(f.add_months(month_start, 1), 1)
+
+    # 3. pmin(...) ignoring nulls by coalescing to a "far-future" date
+    at_risk_end = f.array_min(f.array(
+        f.coalesce(f.col(cov_hx_col), f.lit("9999-12-31")),
+        f.coalesce(f.col(death_col),  f.lit("9999-12-31")),
+        f.lit(end_str),  # e.g. "2024-06-30"
+        f.coalesce(f.col(date90_col), f.lit("9999-12-31")),
+        month_end
+    ))
+
+    # 4. pmax(...) ignoring nulls by coalescing to a "far-past" date
+    at_risk_start = f.array_max(f.array(
+        f.lit(start_str),  # e.g. "2020-01-01"
+        f.coalesce(f.col(date18_col), f.lit("0001-01-01")),
+        f.coalesce(f.col(gdppr_col),  f.lit("0001-01-01")),
+        month_start
+    ))
+
+    # 5. Age at at_risk_start = floor( months_between(at_risk_start, dob_col) / 12 )
+    #    (Assuming `dob_col` is a valid date of birth column in the DF)
+    age_expr = f.floor(
+        f.months_between(at_risk_start, f.col(dob_col)) / 12
+    )
+
+    # Return both pieces as a struct
+    return age_expr
+
+# COMMAND ----------
+
+import pyspark.sql.functions as f
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+from functools import reduce
+
+def compute_days_at_risk(
+    df,
+    start_date_str: str,  # e.g. "2020-01-01"
+    end_date_str: str,    # e.g. "2024-06-30"
+    cov_hx_col: str = "cov_hx_first_obesity_date",
+    death_col: str = "date_of_death",
+    date90_col: str = "date_90",
+    date18_col: str = "date_18",
+    gdppr_col: str = "gdppr_earliest"
+):
+    """
+    Mimics the R function 'compute_days_at_risk' in PySpark.
+    1) Calculates how many months between start_date_str and end_date_str.
+    2) Generates a list of (month_abb, year) pairs.
+    3) For each pair, creates a new column computing days at risk.
+    4) Sums all such columns into 'days_all_years'.
+    5) Returns a DataFrame with these new columns added.
+    """
+    # Parse the input strings into Python datetime objects
+    start_date_obj = datetime.strptime(start_date_str, "%Y-%m-%d")
+    end_date_obj   = datetime.strptime(end_date_str,   "%Y-%m-%d")
+
+    # 1) Calculate number of months between .start_date and .end_date, inclusive
+    #    R code: interval(.start_date, .end_date) %/% months(1) + 1
+    #    We'll do it with a while loop or a helper:
+    def months_between_inclusive(d1, d2):
+        # If d1 > d2, return 0
+        # Else count how many times we add 1 month from d1 until we pass d2
+        if d1 > d2:
+            return 0
+        count = 0
+        temp = d1
+        while temp <= d2:
+            count += 1
+            # Move to the next month
+            temp = temp + relativedelta(months=1)
+        return count
+
+    months_diff = months_between_inclusive(start_date_obj, end_date_obj)
+
+    # 2) Generate the vector of months (short abbreviations) and years
+    #    R does: rep(month.abb, length.out = months_diff)
+    #    We'll cycle through month abbreviations in Python:
+    month_abbs = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+    
+    repeated_months = [month_abbs[(i % 12)] for i in range(months_diff)]
+    # R does: repeated_years = as.numeric(start_year) + floor((seq_along(...) - 1) / 12)
+    start_year = start_date_obj.year
+    repeated_years = [start_year + (i // 12) for i in range(months_diff)]
+    
+    # 3) Build column names, e.g. "days_May20"
+    #    R code: sub("^[0-9]{2}", "", year_i) is effectively the last 2 digits
+    #    We'll do str(year_i)[-2:] for the last two digits
+    def build_col_name(m, y):
+        # y_last2 => e.g. 2023 -> "23"
+        y_last2 = str(y)[-2:]
+        return f"days_{m}{y_last2}"
+
+    col_names = [build_col_name(m, y) for m, y in zip(repeated_months, repeated_years)]
+
+    # 4) For each month-year pair, create a new column in the DataFrame
+    #    using the expression function from above
+    from pyspark.sql import DataFrame
+
+    # We'll store the new DF in a variable so we can keep adding columns
+    df_out = df
+    for (month_i, year_i, col_name_i) in zip(repeated_months, repeated_years, col_names):
+        days_expr = compute_days_at_risk_individual(
+            month_str=month_i,
+            year_str=str(year_i),
+            start_str=start_date_str,
+            end_str=end_date_str,
+            cov_hx_col=cov_hx_col,
+            death_col=death_col,
+            date90_col=date90_col,
+            date18_col=date18_col,
+            gdppr_col=gdppr_col
+        )
+        df_out = df_out.withColumn(col_name_i, days_expr)
+
+    # 5) days_all_years = rowSums(...) in R => we sum all those new columns
+    #    We'll use a reduce over the columns. If col_names is empty, days_all_years = 0
+    if col_names:
+        sum_expr = reduce(
+            lambda a, b: a + b,
+            [f.col(c) for c in col_names],
+            f.lit(0)
+        )
+    else:
+        sum_expr = f.lit(0)
+
+    df_out = df_out.withColumn("days_all_years", sum_expr)
+
+    return df_out
+
+# COMMAND ----------
+
+import pyspark.sql.functions as f
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+from functools import reduce
+
+def compute_days_at_risk_2(
+    df,
+    start_date_str: str,  # e.g. "2020-01-01"
+    end_date_str: str,    # e.g. "2024-06-30"
+    cov_hx_col: str = "cov_hx_first_obesity_date",
+    death_col: str = "date_of_death",
+    date90_col: str = "date_100",
+    date18_col: str = "date_18",
+    gdppr_col: str = "gdppr_earliest",
+    dob_col: str = "date_of_birth"   
+):
+    """
+    Mimics the R function 'compute_days_at_risk' in PySpark.
+    1) Calculates how many months between start_date_str and end_date_str.
+    2) Generates a list of (month_abb, year) pairs.
+    3) For each pair, creates a new column computing days at risk.
+    4) Sums all such columns into 'days_all_years'.
+    5) Returns a DataFrame with these new columns added.
+    """
+    # Parse the input strings into Python datetime objects
+    start_date_obj = datetime.strptime(start_date_str, "%Y-%m-%d")
+    end_date_obj   = datetime.strptime(end_date_str,   "%Y-%m-%d")
+
+    # 1) Calculate number of months between .start_date and .end_date, inclusive
+    #    R code: interval(.start_date, .end_date) %/% months(1) + 1
+    #    We'll do it with a while loop or a helper:
+    def months_between_inclusive(d1, d2):
+        # If d1 > d2, return 0
+        # Else count how many times we add 1 month from d1 until we pass d2
+        if d1 > d2:
+            return 0
+        count = 0
+        temp = d1
+        while temp <= d2:
+            count += 1
+            # Move to the next month
+            temp = temp + relativedelta(months=1)
+        return count
+
+    months_diff = months_between_inclusive(start_date_obj, end_date_obj)
+
+    # 2) Generate the vector of months (short abbreviations) and years
+    #    R does: rep(month.abb, length.out = months_diff)
+    #    We'll cycle through month abbreviations in Python:
+    month_abbs = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+    
+    repeated_months = [month_abbs[(i % 12)] for i in range(months_diff)]
+    # R does: repeated_years = as.numeric(start_year) + floor((seq_along(...) - 1) / 12)
+    start_year = start_date_obj.year
+    repeated_years = [start_year + (i // 12) for i in range(months_diff)]
+    
+    # 3) Build column names, e.g. "days_May20"
+    #    R code: sub("^[0-9]{2}", "", year_i) is effectively the last 2 digits
+    #    We'll do str(year_i)[-2:] for the last two digits
+    def build_col_name_days(m, y):
+        # y_last2 => e.g. 2023 -> "23"
+        y_last2 = str(y)[-2:]
+        return f"days_{m}{y_last2}"
+    
+    def build_col_name_age(m, y):
+        # y_last2 => e.g. 2023 -> "23"
+        y_last2 = str(y)[-2:]
+        return f"age_{m}{y_last2}"
+
+    col_names_days = [build_col_name_days(m, y) for m, y in zip(repeated_months, repeated_years)]
+    col_names_age  = [build_col_name_age(m, y) for m, y in zip(repeated_months, repeated_years)]
+
+    # 4) For each month-year pair, create a new column in the DataFrame
+    #    using the expression function from above
+    from pyspark.sql import DataFrame
+
+    # We'll store the new DF in a variable so we can keep adding columns
+    df_out = df
+    for (month_i, year_i, col_name_days_i, col_name_age_i) in zip(repeated_months, repeated_years, col_names_days, col_names_age):
+        days_expr = compute_days_at_risk_individual(
+            month_str=month_i,
+            year_str=str(year_i),
+            start_str=start_date_str,
+            end_str=end_date_str,
+            cov_hx_col=cov_hx_col,
+            death_col=death_col,
+            date90_col=date90_col,
+            date18_col=date18_col,
+            gdppr_col=gdppr_col
+        )
+        age_expr = compute_days_at_risk_individual_age(
+            month_str=month_i,
+            year_str=str(year_i),
+            start_str=start_date_str,
+            end_str=end_date_str,
+            cov_hx_col=cov_hx_col,
+            death_col=death_col,
+            date90_col=date90_col,
+            date18_col=date18_col,
+            gdppr_col=gdppr_col,
+            dob_col=dob_col
+        )
+        df_out = df_out.withColumn(col_name_days_i, days_expr).withColumn(col_name_age_i, age_expr)
+
+    return df_out
+
+# COMMAND ----------
+
+from pyspark.sql import DataFrame
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+
+def compute_incidence_numerator_crude(
+    df: DataFrame,
+    start_date_str: str = Project.study_start_date,  # e.g. "2020-01-01"
+    end_date_str: str = Project.study_end_date,    # e.g. "2024-06-30"
+    # Column names:
+    date_col: str = "cov_hx_first_obesity_date",
+    date90_col: str = "date_100",
+    id_col: str = "person_id",
+    by_col: str = None    # Optional stratification column name
+) -> DataFrame:
+    """
+    PySpark equivalent of the R function 'compute_incidence_numerator'.
+
+    1) Calculates how many months lie between start_date_str and end_date_str (inclusive).
+    2) Builds a small Spark DataFrame of (months, years) for that range.
+    3) Creates a "numerator" DataFrame by extracting months, years from date_col (cov_hx_first_obesity_date).
+    4) Groups by (months, years), optionally pivoting by by_col, to count distinct id_col.
+    5) Left-joins the (months, years) DataFrame to fill missing month-year combinations with null.
+    6) Returns the resulting DataFrame.
+
+    :param df:              Main Spark DataFrame containing columns [date_col, id_col, (optionally by_col)].
+    :param start_date_str:  Start date in "YYYY-MM-DD" format.
+    :param end_date_str:    End date in "YYYY-MM-DD" format.
+    :param date_col:        Column name that holds the date of first obesity (cov_hx_first_obesity_date).
+    :param id_col:          Unique identifier column name (person_id).
+    :param by_col:          Optional stratification column name (like .by in R). If None, no pivot is done.
+    :return:                A Spark DataFrame with columns for months, years (and possibly pivoted columns), 
+                            plus counts of distinct id_col per month-year.
+    """
+
+    # ----------------------------------------------------------------------------
+    # 1) Compute how many months are between start_date_str and end_date_str (inclusive)
+    # ----------------------------------------------------------------------------
+    def months_between_inclusive(d1: datetime, d2: datetime) -> int:
+        """Return the count of months from d1 up to and including d2."""
+        if d1 > d2:
+            return 0
+        count = 0
+        tmp = d1
+        while tmp <= d2:
+            count += 1
+            tmp += relativedelta(months=1)
+        return count
+
+    # Parse start/end into Python datetime objects
+    start_date_obj = datetime.strptime(start_date_str, "%Y-%m-%d")
+    end_date_obj   = datetime.strptime(end_date_str,   "%Y-%m-%d")
+
+    months_diff = months_between_inclusive(start_date_obj, end_date_obj)
+
+    # ----------------------------------------------------------------------------
+    # 2) Build a local list of (months, years) for that range
+    # ----------------------------------------------------------------------------
+    # R does: rep(month.abb, length.out = months_diff)
+    # We'll cycle through Python abbreviations for months.
+    month_abbs = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+
+    # Repeated months
+    repeated_months = [month_abbs[i % 12] for i in range(months_diff)]
+    # Start year
+    start_year_int = start_date_obj.year
+    repeated_years = [start_year_int + (i // 12) for i in range(months_diff)]
+
+    # ----------------------------------------------------------------------------
+    # 3) Create a small Spark DataFrame with columns "months", "years"
+    # ----------------------------------------------------------------------------
+    # We'll do this by constructing a local list of tuples and parallelizing:
+    # e.g. [("Jan", 2020), ("Feb", 2020), ...]
+    month_year_tuples = list(zip(repeated_months, repeated_years))  # List of (month, year)
+    spark = df.sparkSession  # get the active SparkSession
+
+    months_years_df = spark.createDataFrame(
+        month_year_tuples,
+        ["months", "years"]
+    )
+
+    # ----------------------------------------------------------------------------
+    # 4) Create the "numerator" DataFrame by extracting months, years from 'date_col'
+    # ----------------------------------------------------------------------------
+    # R uses: mutate(
+    #            months = format(cov_hx_first_obesity_date, "%b"),
+    #            years  = format(cov_hx_first_obesity_date, "%Y")
+    #         )
+    #
+    # => in PySpark: date_format(date_col, 'MMM') => e.g. "Jan", "Feb", ...
+    #                date_format(date_col, 'yyyy') => e.g. "2020"
+
+    numerator_df = (
+      df
+      .withColumn("months", f.date_format(f.col(date_col), "MMM"))
+      .withColumn("years",  f.date_format(f.col(date_col), "yyyy"))
+      .where(f.col(date_col) < f.col(date90_col))
+    ) 
+
+    # ----------------------------------------------------------------------------
+    # 5) Group or Pivot
+    # ----------------------------------------------------------------------------
+    # If by_col is None => group by (months, years) => countDistinct(id_col)
+    # If by_col is not None => pivot by that column
+    #
+    # R code:
+    # if(missing(.by)) {
+    #   numerator <- numerator |> summarise(n = n_distinct(person_id), .by = c(months, years))
+    # } else {
+    #   numerator <- numerator
+    #       |> summarise(n = n_distinct(person_id), by = c(months, years, {{ .by }}))
+    #       |> pivot_wider(id_cols = c(months, years), names_from = .by, values_from = n)
+    # }
+    
+    if by_col is None:
+        # Just group by (months, years)
+        numerator_grouped = (
+            numerator_df
+            .groupBy("months", "years")
+            .agg(f.countDistinct(id_col).alias("n"))
+        )
+
+        # ----------------------------------------------------------------------------
+        # 6) Left Join months_years_df with numerator_grouped
+        # ----------------------------------------------------------------------------
+        # R code: years_and_months |> left_join(numerator, by = join_by(months, years))
+        # We do the same in PySpark => on=["months","years"], how="left"
+        df_out = (
+           months_years_df
+           .join(numerator_grouped, on=["months", "years"], how="left")
+        )
+    
+    elif by_col == "msoa":
+        numerator_grouped = (
+            numerator_df
+            .drop("months")
+            .groupBy("years", by_col)
+            .agg(f.countDistinct(id_col).alias("n"))
+        )
+
+        df_out = (
+            months_years_df
+            .select('years')
+            .distinct()
+            .join(numerator_grouped, on="years", how="left")
+        )
+
+    else:
+        # We pivot by by_col
+        # Summarize distinct person_id by (months, years, by_col)
+        # Then pivot so that each unique value of by_col becomes a column
+        numerator_grouped = (
+            numerator_df
+            .groupBy("months", "years")          # grouping keys
+            .pivot(by_col)                       # pivot on .by column
+            .agg(f.countDistinct(id_col))        # aggregator
+        )
+
+        df_out = (
+            months_years_df
+            .join(numerator_grouped, on=["months", "years"], how="left")
+        )    
+        # the resulting DataFrame will have columns: months, years, plus one column per .by value
+
+    return df_out
+
+# COMMAND ----------
+
+# DBTITLE 1,Compute incidence denominator standardised
+from pyspark.sql import DataFrame
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+
+def compute_incidence_numerator_standardised(
+    df: DataFrame,
+    start_date_str: str = Project.study_start_date,  # e.g. "2020-01-01"
+    end_date_str: str = Project.study_end_date,    # e.g. "2024-06-30"
+    # Column names:
+    date_col: str = "cov_hx_first_obesity_date",
+    date90_col: str = "date_100",
+    id_col: str = "person_id",
+    by_col: str = None    # Optional stratification column name
+) -> DataFrame:
+    """
+    PySpark equivalent of the R function 'compute_incidence_numerator'.
+
+    1) Calculates how many months lie between start_date_str and end_date_str (inclusive).
+    2) Builds a small Spark DataFrame of (months, years) for that range.
+    3) Creates a "numerator" DataFrame by extracting months, years from date_col (cov_hx_first_obesity_date).
+    4) Groups by (months, years), optionally pivoting by by_col, to count distinct id_col.
+    5) Left-joins the (months, years) DataFrame to fill missing month-year combinations with null.
+    6) Returns the resulting DataFrame.
+
+    :param df:              Main Spark DataFrame containing columns [date_col, id_col, (optionally by_col)].
+    :param start_date_str:  Start date in "YYYY-MM-DD" format.
+    :param end_date_str:    End date in "YYYY-MM-DD" format.
+    :param date_col:        Column name that holds the date of first obesity (cov_hx_first_obesity_date).
+    :param id_col:          Unique identifier column name (person_id).
+    :param by_col:          Optional stratification column name (like .by in R). If None, no pivot is done.
+    :return:                A Spark DataFrame with columns for months, years (and possibly pivoted columns), 
+                            plus counts of distinct id_col per month-year.
+    """
+
+    # ----------------------------------------------------------------------------
+    # 1) Compute how many months are between start_date_str and end_date_str (inclusive)
+    # ----------------------------------------------------------------------------
+    def months_between_inclusive(d1: datetime, d2: datetime) -> int:
+        """Return the count of months from d1 up to and including d2."""
+        if d1 > d2:
+            return 0
+        count = 0
+        tmp = d1
+        while tmp <= d2:
+            count += 1
+            tmp += relativedelta(months=1)
+        return count
+
+    # Parse start/end into Python datetime objects
+    start_date_obj = datetime.strptime(start_date_str, "%Y-%m-%d")
+    end_date_obj   = datetime.strptime(end_date_str,   "%Y-%m-%d")
+
+    months_diff = months_between_inclusive(start_date_obj, end_date_obj)
+
+    # ----------------------------------------------------------------------------
+    # 2) Build a local list of (months, years) for that range
+    # ----------------------------------------------------------------------------
+    # R does: rep(month.abb, length.out = months_diff)
+    # We'll cycle through Python abbreviations for months.
+    month_abbs = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+
+    # Repeated months
+    repeated_months = [month_abbs[i % 12] for i in range(months_diff)]
+    # Start year
+    start_year_int = start_date_obj.year
+    repeated_years = [start_year_int + (i // 12) for i in range(months_diff)]
+
+    # ----------------------------------------------------------------------------
+    # 3) Create a small Spark DataFrame with columns "months", "years"
+    # ----------------------------------------------------------------------------
+    # We'll do this by constructing a local list of tuples and parallelizing:
+    # e.g. [("Jan", 2020), ("Feb", 2020), ...]
+    month_year_tuples = list(zip(repeated_months, repeated_years))  # List of (month, year)
+    spark = df.sparkSession  # get the active SparkSession
+
+    months_years_df = spark.createDataFrame(
+        month_year_tuples,
+        ["months", "years"]
+    )
+
+    # ----------------------------------------------------------------------------
+    # 4) Create the "numerator" DataFrame by extracting months, years from 'date_col'
+    # ----------------------------------------------------------------------------
+    # R uses: mutate(
+    #            months = format(cov_hx_first_obesity_date, "%b"),
+    #            years  = format(cov_hx_first_obesity_date, "%Y")
+    #         )
+    #
+    # => in PySpark: date_format(date_col, 'MMM') => e.g. "Jan", "Feb", ...
+    #                date_format(date_col, 'yyyy') => e.g. "2020"
+
+    numerator_df = (
+      df
+      .withColumn("months", f.date_format(f.col(date_col), "MMM"))
+      .withColumn("years",  f.date_format(f.col(date_col), "yyyy"))
+      .where(f.col(date_col) < f.col(date90_col))
+      # Compute 5-year age groups
+      .withColumn("date_col_first_of_month", f.trunc(date_col, "month"))
+      .withColumn(
+          "age", f.floor(f.months_between(f.col("date_col_first_of_month"), f.col("date_of_birth")) / 12)
+      )
+      .withColumn(
+          "age_grp_5yr",
+          f.when(
+              f.col("age") <= 89,
+              f.concat_ws(
+                 "-",
+                (f.floor(F.col("age") / 5) * 5).cast("string"),
+                ((f.floor(F.col("age") / 5) * 5) + 4).cast("string")
+              )
+          ).otherwise("90+")
+          # .otherwise(None)  # or .otherwise("90+") if you want a "90+" bucket
+      )
+    ) 
+
+    # ----------------------------------------------------------------------------
+    # 5) Group or Pivot
+    # ----------------------------------------------------------------------------
+    # If by_col is None => group by (months, years) => countDistinct(id_col)
+    # If by_col is not None => pivot by that column
+    #
+    # R code:
+    # if(missing(.by)) {
+    #   numerator <- numerator |> summarise(n = n_distinct(person_id), .by = c(months, years))
+    # } else {
+    #   numerator <- numerator
+    #       |> summarise(n = n_distinct(person_id), by = c(months, years, {{ .by }}))
+    #       |> pivot_wider(id_cols = c(months, years), names_from = .by, values_from = n)
+    # }
+    
+    if by_col is None:
+        # Just group by (months, years)
+        numerator_grouped = (
+            numerator_df
+            .groupBy("months", "years", "sex", "age_grp_5yr")
+            .agg(f.countDistinct(id_col).alias("n"))
+        )
+
+        # ----------------------------------------------------------------------------
+        # 6) Left Join months_years_df with numerator_grouped
+        # ----------------------------------------------------------------------------
+        # R code: years_and_months |> left_join(numerator, by = join_by(months, years))
+        # We do the same in PySpark => on=["months","years"], how="left"
+        df_out = (
+           months_years_df
+           .join(numerator_grouped, on=["months", "years"], how="left")
+        )
+    
+    elif by_col == "msoa":
+        numerator_grouped = (
+            numerator_df
+            .drop("months")
+            .groupBy("years", "sex", "age_grp_5yr", by_col)
+            .agg(f.countDistinct(id_col).alias("n"))
+        )
+
+        df_out = (
+            months_years_df
+            .select('years')
+            .distinct()
+            .join(numerator_grouped, on="years", how="left")
+        )
+
+    else:
+        # We pivot by by_col
+        # Summarize distinct person_id by (months, years, by_col)
+        # Then pivot so that each unique value of by_col becomes a column
+        numerator_grouped = (
+            numerator_df
+            .groupBy("months", "years", "sex", "age_grp_5yr")   # grouping keys
+            .pivot(by_col)                       # pivot on .by column
+            .agg(f.countDistinct(id_col))        # aggregator
+        )
+
+        df_out = (
+            months_years_df
+            .join(numerator_grouped, on=["months", "years"], how="left")
+        )    
+        # the resulting DataFrame will have columns: months, years, plus one column per .by value
+
+    return df_out
+
+# COMMAND ----------
+
+from pyspark.sql import DataFrame
+from pyspark.sql import functions as F
+from pyspark.sql.types import DoubleType, IntegerType, FloatType
+
+def compute_incidence_denominator_crude(data: DataFrame, by: str = None) -> DataFrame:
+    """
+    Compute the incidence denominator by summing 'days_' columns, optionally grouped by a specified column,
+    and reshaping the data.
+
+    Args:
+        data (DataFrame): Input PySpark DataFrame.
+        by (str, optional): Column name to group by. Defaults to None.
+
+    Returns:
+        DataFrame: Processed DataFrame with summed and reshaped data.
+    """
+
+    # Step 1: Identify columns starting with "days_"
+    day_cols = [c for c in data.columns if c.startswith("days_")]
+
+    if not day_cols:
+        raise ValueError("No columns starting with 'days_' found in the data.")
+
+    # Step 2: Sum the 'days_' columns
+    if by:
+        # Ensure the 'by' column exists
+        if by not in data.columns:
+            raise ValueError(f"The specified 'by' column '{by}' does not exist in the data.")
+        
+        sum_df = data.groupBy(by).agg(*[F.sum(F.col(c)).alias(c) for c in day_cols])
+    else:
+        sum_df = data.agg(*[F.sum(F.col(c)).alias(c) for c in day_cols])
+
+    # Step 3: Reshape the summed data from wide to long format
+    if by:
+        # Number of day columns
+        n = len(day_cols)
+        
+        # Create the stack expression
+        stack_expr = "stack({0}, {1}) as (date, py)".format(
+            n,
+            ", ".join([f"'{c}', {c}" for c in day_cols])
+        )
+        
+        # Melt the DataFrame
+        melted = sum_df.select(by, F.expr(stack_expr))
+        
+        # Pivot wider: date as rows, 'by' levels as columns
+        reshaped = melted.groupBy("date").pivot(by).agg(F.first("py"))
+    else:
+        # Number of day columns
+        n = len(day_cols)
+        
+        # Create the stack expression
+        stack_expr = "stack({0}, {1}) as (date, all)".format(
+            n,
+            ", ".join([f"'{c}', {c}" for c in day_cols])
+        )
+        
+        # Melt the DataFrame
+        reshaped = sum_df.select(F.expr(stack_expr))
+
+   # Step 4: Transformations
+    # a. Divide numeric columns by 365.25 to convert days to years
+    numeric_cols = [
+        c for c in reshaped.columns 
+        if c not in ["date"] and reshaped.schema[c].dataType.typeName() in [
+            "double", "integer", "float", "long", "decimal"
+        ]
+    ]
+    
+    # Debugging: Print identified numeric columns
+    print(f"Numeric columns to convert: {numeric_cols}")
+    
+    for c in numeric_cols:
+        reshaped = reshaped.withColumn(c, F.col(c).cast(DoubleType()) / 365.25)
+
+    # b. Create 'months' and 'years' columns
+    reshaped = reshaped.withColumn(
+        "months",
+        F.when(~F.col("date").contains("all"),
+               F.regexp_extract("date", "[A-Z].{2}", 0))
+         .otherwise("All")
+    ).withColumn(
+        "years",
+        F.when(~F.col("date").contains("all"),
+               F.concat(F.lit("20"), F.regexp_extract("date", "[0-9]{2}$", 0)))
+         .otherwise("All")
+    )
+
+    # c. Reorder columns: 'months', 'years', then others
+    other_cols = [c for c in reshaped.columns if c not in ["months", "years"]]
+    reshaped = reshaped.select("months", "years", *other_cols)
+
+    # d. Drop 'date' column
+    reshaped = reshaped.drop("date")
+
+    # e. Rename columns: if not 'months' or 'years', lowercase and append '_py'
+    for c in reshaped.columns:
+        if c.lower() not in ["months", "years"]:
+            reshaped = reshaped.withColumnRenamed(c, f"{c.lower()}_py")
+        else:
+            reshaped = reshaped.withColumnRenamed(c, c.lower())
+
+    return reshaped
+
+# COMMAND ----------
+
+from pyspark.sql import DataFrame
+from pyspark.sql import functions as F
+from pyspark.sql.types import DoubleType, IntegerType, FloatType
+
+def compute_incidence_denominator_standardised(data: DataFrame, by: str = None) -> DataFrame:
+    """
+    Compute the incidence denominator by summing 'days_' columns, optionally grouped by a specified column,
+    and reshaping the data.
+
+    Args:
+        data (DataFrame): Input PySpark DataFrame.
+        by (str, optional): Column name to group by. Defaults to None.
+
+    Returns:
+        DataFrame: Processed DataFrame with summed and reshaped data.
+    """
+
+    # Step 0: Code 5-year age groups
+    # Identify all columns beginning with 'age_'
+    cols_to_transform = [c for c in data.columns if c.startswith("age_")]
+
+    # Loop through each such column and overwrite it
+    for age_col in cols_to_transform:
+      data = data.withColumn(
+        age_col,
+        F.when(
+            F.col(age_col) <= 89,
+            F.concat_ws(
+                "-",
+                (F.floor(F.col(age_col) / 5) * 5).cast("string"),
+                ((F.floor(F.col(age_col) / 5) * 5) + 4).cast("string")
+            )
+        ).otherwise("90+") # to use a bucket for ages ≥ 90
+    )
+      
+    # 1. Identify the days columns.
+    #    We assume days columns are named with prefix "days_".
+    days_cols = [col for col in data.columns if col.startswith("days_")]
+
+    # 2. Derive the month suffixes from the days columns.
+    #    For example, from "days_Jan19" we extract "Jan19".
+    months = sorted([col[5:] for col in days_cols])
+
+    # 3. Build the stack() expression.
+    #    For each month, we provide three expressions:
+    #    - A literal with the month-year suffix (e.g. 'Jan19')
+    #    - The corresponding days column (e.g. days_Jan19)
+    #    - The corresponding age column (e.g. age_Jan19)
+    #
+    #    Note: We use backticks to refer to column names that include underscores.
+    n = len(months)
+    stack_expr = "stack({0}, {1}) as (month_year, days, age)".format(
+        n,
+        ", ".join([f"'{m}', `days_{m}`, `age_{m}`" for m in months])
+    )
+
+    if by is None:
+        
+        # 4. Apply the stack() expression.
+        data_long = data.select("person_id", "sex", F.expr(stack_expr))
+
+    else:
+
+        data_long = data.select("person_id", "sex", by, F.expr(stack_expr))
+
+    # 5. Separate month_year into separate month and year columns.
+    #    For example, if month_year is "Jan19", extract:
+    #    - month: first 3 characters ("Jan")
+    #    - year: next 2 characters ("19")
+    data_long = (
+        data_long
+        .withColumn("months", F.expr("substring(month_year, 1, 3)"))
+        .withColumn("years", F.expr("substring(month_year, 4, 2)"))
+        .drop("month_year")
+    )
+
+    if by is None:
+
+        data_long = (
+            data_long
+            .groupBy('sex', 'age', 'months', 'years')
+            .agg((F.sum(F.col("days")) / F.lit(365.25)).alias("py"))
+            .withColumn("years", F.col("years").cast("int") + F.lit(2000))
+        )
+    
+    else:
+        
+        data_long = (
+            data_long
+            .groupBy('sex', 'age', by, 'months', 'years')
+            .agg((F.sum(F.col("days")) / F.lit(365.25)).alias("py"))
+            .withColumn("years", F.col("years").cast("int") + F.lit(2000))
+        )
+
+    return data_long
+
+# COMMAND ----------
+
+from pyspark.sql import DataFrame
+from pyspark.sql import functions as F
+from pyspark.sql.types import DoubleType
+
+def compute_incidence_denominator_by_year(data: DataFrame, by: str = None) -> DataFrame:
+    """
+    Compute the incidence denominator by summing 'days_' columns, optionally grouped by a specified column,
+    but aggregate by calendar year (extracted from column names) rather than by calendar month.
+
+    Args:
+        data (DataFrame): Input PySpark DataFrame.
+                         Must contain columns starting with 'days_' (e.g., 'days_2020').
+        by (str, optional): Column name to group by. Defaults to None.
+
+    Returns:
+        DataFrame: Processed DataFrame with summed and reshaped data, 
+                   including a 'year' column and any grouping columns, 
+                   plus incidence denominators (in years) suffixed with '_py'.
+    """
+    # 1) Identify columns starting with "days_"
+    day_cols = [c for c in data.columns if c.startswith("days_")]
+    if not day_cols:
+        raise ValueError("No columns starting with 'days_' found in the data.")
+    
+    # 2) Sum the 'days_' columns across the dataset
+    if by:
+        # Check the grouping column actually exists
+        if by not in data.columns:
+            raise ValueError(f"The specified 'by' column '{by}' does not exist in the data.")
+        sum_df = data.groupBy(by).agg(*[F.sum(F.col(c)).alias(c) for c in day_cols])
+    else:
+        sum_df = data.agg(*[F.sum(F.col(c)).alias(c) for c in day_cols])
+    
+    # 3) Reshape the summed data from wide to long
+    #    We'll "stack" the day_cols into (date, value) pairs, 
+    #    but here 'date' is actually a placeholder that we'll parse as a year
+    if by:
+        # For grouping case
+        n = len(day_cols)
+        stack_expr = "stack({0}, {1}) as (date, py)".format(
+            n,
+            ", ".join([f"'{c}', {c}" for c in day_cols])
+        )
+        
+        melted = sum_df.select(by, F.expr(stack_expr))
+        
+        # Pivot wide: row per 'date', columns per group
+        reshaped = melted.groupBy("date").pivot(by).agg(F.first("py"))
+    else:
+        # No grouping
+        n = len(day_cols)
+        stack_expr = "stack({0}, {1}) as (date, all)".format(
+            n,
+            ", ".join([f"'{c}', {c}" for c in day_cols])
+        )
+        reshaped = sum_df.select(F.expr(stack_expr))
+    
+    # 4) Convert numeric columns from days => years by dividing by 365.25
+    numeric_cols = [
+        c for c in reshaped.columns 
+        if c not in ["date"] 
+           and reshaped.schema[c].dataType.typeName() in ["double", "integer", "float", "long", "decimal"]
+    ]
+    
+    for c in numeric_cols:
+        reshaped = reshaped.withColumn(c, F.col(c).cast(DoubleType()) / 365.25)
+    
+    # 5) Extract the 4-digit year from the 'date' column name (e.g., "days_2020" -> "2020")
+    #    If your columns are named like "days_19" or "days_2019", adjust the regex as needed.
+    reshaped = reshaped.withColumn(
+        "year",
+        F.when(
+            ~F.col("date").contains("all"),
+            F.regexp_extract("date", "([0-9]{4})$", 1)  # capture 4 digits at the end
+        ).otherwise("All")
+    )
+    
+    # 6) Reorder so that 'year' is first (plus grouping columns, if any)
+    #    Identify columns besides 'year' (and 'date' which we'll drop)
+    keep_cols = [c for c in reshaped.columns if c not in ["date", "year"]]
+    reshaped = reshaped.select("year", *keep_cols)
+    
+    # 7) Drop the 'date' column
+    reshaped = reshaped.drop("date")
+    
+    # 8) Rename remaining numeric columns to something like "xxx_py"
+    #    except for "year" or pivoted group columns
+    for c in reshaped.columns:
+        # Skip 'year'
+        if c.lower() not in ["year"]:
+            # For pivoted grouping, c might be your group values
+            # If you'd like to suffix them with _py as well, remove the check
+            # that c isn't in a pivot group
+            reshaped = reshaped.withColumnRenamed(c, f"{c.lower()}_py")
+    
+    return reshaped
+
+# COMMAND ----------
+
+from pyspark.sql import DataFrame
+from pyspark.sql import functions as F
+from pyspark.sql.types import DoubleType
+
+def compute_incidence_denominator_by_year_pivoted(
+    data: DataFrame,
+    by: str
+) -> DataFrame:
+    """
+    Compute the incidence denominator by summing 'days_' columns grouped by `by`,
+    then pivot so each row is one level of `by`, and each column is one calendar year.
+
+    EXAMPLE:
+      If data columns: [by, days_2019, days_2020, days_2021, ...]
+      Then final shape: each row => a distinct value of `by`
+                        each column => one distinct year (e.g., 2019, 2020, 2021, ...)
+
+    Args:
+        data (DataFrame): 
+          Must contain:
+            - A grouping column `by` (string),
+            - Columns named like 'days_YYYY' (e.g., 'days_2020') for each year.
+        by (str): 
+          The column name to group by. 
+          Each row in the final result corresponds to one level of `by`.
+
+    Returns:
+        DataFrame: 
+          Rows = distinct `by` values,
+          Columns = distinct calendar years extracted from the 'days_' column names,
+          Each cell is the total number of person-years (converted from days / 365.25).
+    """
+
+    # 1) Identify columns that start with "days_"
+    day_cols = [c for c in data.columns if c.startswith("days_")]
+    if not day_cols:
+        raise ValueError("No columns starting with 'days_' found in the data.")
+
+    # 2) Ensure the `by` column exists
+    if by not in data.columns:
+        raise ValueError(f"The specified 'by' column '{by}' does not exist in the data.")
+
+    # 3) Sum the 'days_' columns by the grouping column
+    sum_df = data.groupBy(by).agg(*[F.sum(F.col(c)).alias(c) for c in day_cols])
+
+    # 4) Reshape from wide to long via stack. We'll get columns: [by, 'date', 'value']
+    n = len(day_cols)
+    stack_expr = "stack({0}, {1}) as (date, py)".format(
+        n,
+        ", ".join([f"'{c}', {c}" for c in day_cols])
+    )
+    melted = sum_df.select(by, F.expr(stack_expr))
+
+    # 5) Convert from days to person-years by dividing by 365.25
+    #    We'll do that right after the stack operation
+    melted = melted.withColumn("py", F.col("py").cast(DoubleType()) / 365.25)
+
+    # 6) Extract the 2-digit year from the 'date' column name
+    #    e.g. "days_Nov20" => "20"
+    melted = melted.withColumn(
+        "year",
+        F.regexp_extract("date", "([0-9]{2})$", 1)
+    )
+
+    # 7) Pivot so that columns become distinct years, and rows are each distinct `by`
+    #    The value we place is 'py'.
+    #    => results in columns [by, '2019', '2020', '2021', ...]
+    #    Each cell is the total person-years
+    pivoted = (
+        melted.groupBy(by)
+        .pivot("year")
+        .agg(F.sum("py"))
+        # note: if you want sum, we used first() because we already aggregated
+        # if you had multiple rows per group-year, you might do sum().
+    )
+
+    # 8) (Optional) reorder columns so `by` is first, then ascending year columns
+    #    We'll collect all year columns, sort them, then select in order
+    non_by_cols = [c for c in pivoted.columns if c != by]
+    # Sort numeric column names (strings) if possible
+    # Some columns might be empty or "all" => handle if needed
+    sorted_years = sorted([c for c in non_by_cols if c.isdigit()])  
+    other_cols   = [c for c in non_by_cols if not c.isdigit()]
+
+    final_cols = [by] + sorted_years + other_cols
+
+    # return pivoted
+    return pivoted.select(*final_cols)

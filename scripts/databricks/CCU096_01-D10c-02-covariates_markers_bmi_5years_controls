@@ -1,0 +1,788 @@
+# Databricks notebook source
+# MAGIC %md # CCU096_01-D10c-02-covariates_markers_bmi_5years_controls
+# MAGIC
+# MAGIC **Description** This notebook creates the covariates for BMI (it also does the other markers in the previous notebook but they are not of interest here). Contrary to other markers generated in the previous notebook (where we uniformally apply a 2 year look-back and 3 month look-forward periods) we apply a 5 year look-back and 1 year look-forward period, prioritising records before baseline. 
+# MAGIC   
+# MAGIC **Authors** Stelios Boulitsakis Logothetis
+# MAGIC
+# MAGIC 
+# MAGIC
+# MAGIC **Acknowledgements** Based on previous work by Carmen Petitjean, Spencer Keene for CCU004_03 and the Health Data Science Team, BHF Data Science Centre.
+# MAGIC
+# MAGIC **Data Output**
+# MAGIC - **`out_covariates_markers_bmi_5years`** : Covariates for the cohort (markers - BMI, eGFR, HbA1c, HDL cholesterol, total cholesterol, creatinine, ACR, and systolic BP).
+# MAGIC - **`out_exposures_markers_bmi_5years`**: All matched covariate records during the follow-up period (after the study start date). 
+
+# COMMAND ----------
+
+# MAGIC %md # 0. Setup
+
+# COMMAND ----------
+
+# DBTITLE 1,Libraries
+import pyspark.sql.functions as f
+from pyspark.sql import Window
+
+import pandas as pd
+import numpy as np
+
+import datetime
+import matplotlib
+import matplotlib.pyplot as plt
+from matplotlib import dates as mdates
+import seaborn as sns
+
+# COMMAND ----------
+
+# DBTITLE 1,Functions
+# MAGIC %run "shds/common/functions"
+
+# COMMAND ----------
+
+# MAGIC %md # 1. Parameters
+
+# COMMAND ----------
+
+# MAGIC %run "./CCU096_01-D01-parameters"
+
+# COMMAND ----------
+
+# MAGIC %md # 2. Data Sources
+
+# COMMAND ----------
+
+# DBTITLE 1,Import data sources
+codelist = spark.table(Paths.out_codelist_covariates_markers)
+inc_exc  = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_controls_start_date')
+
+skinny   = spark.table(Paths.cur_skinny)
+gdppr    = load_dataset_batch('gdppr')
+
+# COMMAND ----------
+
+# MAGIC %md # 3. Prepare
+
+# COMMAND ----------
+
+# DBTITLE 1,Prepare codelist
+codelist_prepared = (
+    codelist
+    .where(f.col('name').isin(['bmi', 'sbp', 'tchol', 'hdl', 'hba1c', 'egfr', 'creat'])) 
+)
+ 
+tab(codelist_prepared, 'name', 'terminology')
+
+# COMMAND ----------
+
+# DBTITLE 1,Join inclusion/exclusion and skinny
+cohort = skinny.select('PERSON_ID', 'date_of_birth', 'sex').join(inc_exc.select('PERSON_ID'), on='PERSON_ID', how='inner')
+
+# COMMAND ----------
+
+# DBTITLE 1,Define markers start and end dates
+# markers_start_date is the start of the lookback period: 1.5 years before baseline
+# markers_end_date is the end of the lookback period. 3 months ahead of the study start date (lookforward slightly into the future)
+# GDPPR will be prepared with the above start and end dates and then CENSOR_DATE_END will be adjusted for individuals
+markers_start_date = f.add_months(f.col('entry_date'), int(-12*5))
+markers_end_date = f.add_months(f.col('entry_date'), 12)
+
+# COMMAND ----------
+
+# DBTITLE 1,Prepare GDPPR
+# We prepare GDPPR into a suitable format and constrain the date range
+# We only constrain to records after the markers start date but NOT to the markers end date, so that we can match follow-up values too
+# We will split the marker history and follow-up later
+gdppr_prepared = (
+    gdppr
+    .select(f.col('NHS_NUMBER_DEID').alias('PERSON_ID'), 'DATE', 'CODE', 'VALUE1_CONDITION', 'VALUE2_CONDITION')
+    .where(f.col('PERSON_ID').isNotNull() & f.col('DATE').isNotNull())  
+    .withColumn('mono_id', f.monotonically_increasing_id())
+    .join(inc_exc.select('PERSON_ID', 'entry_date'), on='PERSON_ID', how='inner')
+    .where(f.col('DATE') >= markers_start_date)
+)
+
+# COMMAND ----------
+
+# MAGIC %md # 4. Codelist match
+
+# COMMAND ----------
+
+# MAGIC %md ## 4.1 Create
+
+# COMMAND ----------
+
+from mythoslib import _codelist_match_all, codelist_match_summary
+# dictionary - key: dataset, codelist, and ordering in the event of tied records
+dict_in = {
+    'gdppr': (gdppr_prepared, codelist_prepared, 1)
+}
+
+# Run codelist match and codelist match summary functions
+# We only import and run the first stage of codelist matching, giving us all the matches across the input datasets. We don't need the 1st match or the wide format.
+matched_all = _codelist_match_all(dict_in)
+matched_all_summ_name, matched_all_summ_name_code = codelist_match_summary(dict_in, matched_all)
+
+# temp save
+matched_all = temp_save(df=matched_all, out_name=f'{Project.name}_tmp_covariates_markers_matched_all_5years')
+matched_all_summ_name  = temp_save(df=matched_all_summ_name, out_name=f'{Project.name}_tmp_covariates_markers_matched_all_summ_name_5years')
+matched_all_summ_name_code = temp_save(df=matched_all_summ_name_code, out_name=f'{Project.name}_tmp_covariates_markers_matched_all_summ_name_code_5years')
+
+# COMMAND ----------
+
+# DBTITLE 1,Load (if re-running)
+# Load
+matched_all = spark.table(f'{Project.dsa}.{Project.name}_tmp_covariates_markers_matched_all_5years')
+matched_all_summ_name = spark.table(f'{Project.dsa}.{Project.name}_tmp_covariates_markers_matched_all_summ_name_5years')
+matched_all_summ_name_code = spark.table(f'{Project.dsa}.{Project.name}_tmp_covariates_markers_matched_all_summ_name_code_5years')
+
+# COMMAND ----------
+
+# MAGIC %md ## 4.2 Check
+
+# COMMAND ----------
+
+# DBTITLE 1,Inspect matching summary
+display(matched_all_summ_name)
+
+# COMMAND ----------
+
+# MAGIC %md # 5. Prepare
+
+# COMMAND ----------
+
+# MAGIC %md ## 5.1 Filter nulls/OOR
+
+# COMMAND ----------
+
+# filter out nulls or out of range (OOR) values to avoid selecting these in the next stage
+def constrain_marker_to_range(df, marker_name, range_low, range_high):
+    """ Given the table of matched biomarker records, the name of a biomarker, and low & high ends for the valid range of values,
+    Filters out any records for that biomarker that lie outside the given range (inclusive). Ignores other biomarkers in the table.
+    Also removes NULLs.
+    """
+    col_name, col_value = f.col('name'), f.col('VALUE1_CONDITION')
+    # Logical mask for the biomarker: A given record can either belong to the biomarker and be in the given range
+    # OR not belong to this biomarker (in which case we ignore it)
+    marker_within_range = (col_name == marker_name) & (col_value >= range_low) & (col_value <= range_high)
+    different_marker = (col_name != marker_name)
+    marker_not_null = (col_value.isNotNull())
+
+    return df.where((marker_not_null & marker_within_range) | different_marker)
+
+def constrain_all_markers_to_ranges(df, ranges):
+    """ Given the table of matched biomarker records, and a dictionary of biomarker names and low & high ends for the valid ranges of values,
+    Filters out any records for those biomarkers that lie outside the given ranges (inclusive). Ignores other biomarkers in the table.
+    Expects ranges: Dict[string, Tuple[Numeric, Numeric]] with the name of the biomarker as the key (e.g. 'bmi') and the lower and upper ends of the range (inclusive) as the value.
+    """
+    # Iterate the different biomarker types
+    result = df
+    for marker_name, (range_low, range_high) in ranges.items():
+        result = constrain_marker_to_range(result, marker_name, range_low, range_high)
+    
+    return result
+
+marker_ranges = {
+    'bmi': (10, 300),
+    'sbp': (60, 250),
+    'tchol': (1.75, 20),
+    'hdl': (0.2, 10),
+    'hba1c': (0, 195), # We later alter this range to (15, 195) when we convert from percentages to mmol/mol
+    'egfr': (0, 175),
+    'creat': (0, 250)
+    #***REMOVED***'acr': (0, 500),
+    # 'height': (0, 300),
+    # 'weight': (10, 450),
+}
+
+matched_2_constrained = constrain_all_markers_to_ranges(matched_all, marker_ranges)
+
+# COMMAND ----------
+
+# MAGIC %md ## 5.2 Rounding
+# MAGIC
+# MAGIC We round values to 2 decimal places, as we consider it good enough for most cases. If additional resolution is needed for a covariate, we can add an exception here.
+
+# COMMAND ----------
+
+matched_3_rounded = (
+    matched_2_constrained
+    .withColumn('VALUE1_CONDITION', f.round(f.col('VALUE1_CONDITION'), 2))
+    .withColumn('VALUE2_CONDITION', f.round(f.col('VALUE2_CONDITION'), 2))
+)
+
+# COMMAND ----------
+
+# MAGIC %md ## 5.3 Filter duplicates
+
+# COMMAND ----------
+
+window_duplicates = (
+    Window
+    .partitionBy('PERSON_ID', 'name', 'DATE', 'VALUE1_CONDITION')
+    .orderBy('mono_id')
+)
+matched_4_deduplicated = (
+    matched_3_rounded
+    .withColumn('_rank', f.row_number().over(window_duplicates))
+    .where(f.col('_rank') == 1)
+    .drop('_rank')
+)
+
+# COMMAND ----------
+
+# MAGIC %md ## 5.4 Split history and follow-up
+# MAGIC
+# MAGIC We separate the marker history (within the look-back period) and follow-up (after the study start date). The history will undergo further filtering to pick the LOCF value. The follow-up will be saved as-is.
+
+# COMMAND ----------
+
+history_1_matched, followup_1_matched = (
+    matched_4_deduplicated.where(f.col('DATE') < markers_end_date),
+    matched_4_deduplicated.where(f.col('DATE') >= markers_end_date)
+)
+
+# COMMAND ----------
+
+# MAGIC %md ## 5.5 Add selection group
+
+# COMMAND ----------
+
+history_2_selection_groups = (
+    history_1_matched
+    .withColumn('_selection_group',
+        f.when((f.col('DATE') >= markers_start_date) & (f.col('DATE') < f.col('entry_date')), 1)
+        # RF: changed all selection groups to 1 (24-Feb-2025)
+        .when((f.col('DATE') >= f.col('entry_date')) & (f.col('DATE') < markers_end_date), 1)
+        .otherwise(-1))
+    .withColumn('_diff_abs', f.abs(f.datediff(f.col('DATE'), f.col('entry_date'))/365.25))
+)
+
+# COMMAND ----------
+
+# SBL: This will reveal problematic IDs where the 5 year and 2 year BMIs dont match
+# df_matched_2 = spark.table(f'{Project.dsa}.{Project.name}_out_covariates_markers_controls').select('PERSON_ID', f.col('cov_mark_bmi_date').alias('bmi_date_2y'), f.col('cov_mark_bmi_value').alias('bmi_value_2y'))
+# df_matched_5 = spark.table(f'{Project.dsa}.{Project.name}_out_covariates_markers_controls_5years').select('PERSON_ID', f.col('cov_mark_bmi_date').alias('bmi_date_5y'), f.col('cov_mark_bmi_value').alias('bmi_value_5y'))
+# df_j = df_matched_2.join(df_matched_5, how='inner', on='PERSON_ID')
+# display(df_j.where(f.col('bmi_date_2y') != f.col('bmi_date_5y')))
+
+# SBL: This will check the selection groups for all matched BMIs for a given ID
+# display(history_2_selection_groups.where(f.col('PERSON_ID') == "").withColumn('markers_start_date', markers_start_date).withColumn('markers_end_date', markers_end_date).where(f.col('name') == 'bmi').select('PERSON_ID', 'DATE', f.col('VALUE1_CONDITION').alias('bmi'), '_selection_group'))
+
+# COMMAND ----------
+
+# MAGIC %md # 6. Selection
+
+# COMMAND ----------
+
+# MAGIC %md ## 6.1 Select top selection group
+# MAGIC
+# MAGIC We select the value(s) with the highest selection group per biomarker. We use a *dense ranking*, allowing multiple distinct values to be selected with the same `DATE`. We will filter these down to a single value per date later on.
+
+# COMMAND ----------
+
+# DBTITLE 1,Densely rank records and filter top ranked
+# Densely rank the records (per biomarker per person) by selection group and date. 
+# Use a dense rank to allow multiple records for the same biomarker if they have the same date. Will resolve these ties later.
+window_dense_rank = (
+    Window
+    .partitionBy('PERSON_ID', 'name')
+    .orderBy('_selection_group', '_diff_abs')  
+)
+# Pick the records per marker that have the top rank. 
+history_3_dense_ranked = (
+    history_2_selection_groups
+    .withColumn('_dense_rank', f.dense_rank().over(window_dense_rank))
+    .where(f.col('_dense_rank') == 1)
+    .drop('_dense_rank')
+)  
+
+# COMMAND ----------
+
+# DBTITLE 1,Augment with row numbers
+# Augment with row numbers & a count of how many conflicting records per biomarker per person.
+window_row_num = (
+    Window
+    .partitionBy('PERSON_ID', 'name')
+    .orderBy('_selection_group', '_diff_abs', 'mono_id')  
+)
+window_row_num_max = (
+    Window
+    .partitionBy('PERSON_ID', 'name', 'DATE')
+)
+
+history_4_row_numbers = (
+    history_3_dense_ranked
+    # Index distinct values for each biomarker that had the same date
+    .withColumn('_row_num', f.row_number().over(window_row_num))
+    # Augment with the maximum value of _row_num per biomarker per person
+    .withColumn('_row_num_max', f.count(f.lit(1)).over(window_row_num_max))
+)
+
+# COMMAND ----------
+
+# MAGIC %md We find that two markers have the most tied records: BMI and systolic BP. 
+
+# COMMAND ----------
+
+# DBTITLE 1,Check
+tabstat(history_4_row_numbers, '_row_num_max', 'name')
+
+# COMMAND ----------
+
+# MAGIC %md ## 6.2 BMI rounding
+# MAGIC
+# MAGIC A lot of patients have ties in the BMI records - multiple values for the same date. We want to prioritise the most precise/non-rounded value. Keep in mind there may be multiple distinct values with the same precision (e.g. 28.53 and 31.39). We order the most precise value(s) first and remove the rounded values below. Distinct but equally precise values will not be removed but flagged for later. 
+# MAGIC
+# MAGIC
+
+# COMMAND ----------
+
+# Separate the working table into 2: 
+# 1. The BMI records where the same PERSON_ID has multiple tied records, and 
+# 2. Everything else (BMI records with no ties and also all other markers)
+# We will work on bmi_conflicts and then re-join it with bmi_outer to obtain a complete table again.
+bmi_conflicts, bmi_outer = (
+    history_4_row_numbers.where((f.col('name') == 'bmi') & (f.col('_row_num_max') > 1)),
+    history_4_row_numbers.where((f.col('name') != 'bmi') | (f.col('_row_num_max') == 1))
+)
+
+# Augment BMIs with indicator of how many decimal places they are precise to
+bmi_conflicts_dp = (
+    bmi_conflicts
+    .withColumn('VALUE1_CONDITION_str', f.col('VALUE1_CONDITION').cast(t.StringType()))
+    .withColumn('first_decimal_point', f.substring(f.col('VALUE1_CONDITION_str'), -2, 1)) 
+    .withColumn('second_decimal_point', f.substring(f.col('VALUE1_CONDITION_str'), -1, 1))
+    .withColumn('n_decimal_points', 
+        f.when(f.col('second_decimal_point') != '0', 2)
+        .when(f.col('first_decimal_point') != '0', 1)
+        .otherwise(0)
+    )
+)
+
+# This regex will match numbers with up to 2 decimal digits and up to 3 integer digits 
+# We use it to ensure BMIs have been rounded correctly. Should be rounded to 2 decimal places. 
+evil_regex = r'^(\d)?\d\d\.\d\d$'
+assert bmi_conflicts_dp.where(~f.col('VALUE1_CONDITION_str').rlike(evil_regex)).count() == 0
+
+# Window will prioritise values precise to more decimal digits
+win_bmi = (
+    Window
+    .partitionBy('PERSON_ID', 'DATE')
+    .orderBy(f.desc('n_decimal_points'), 'mono_id')
+)
+
+bmi_conflicts_rownum = (
+    bmi_conflicts_dp
+    .withColumn('rownum', f.row_number().over(win_bmi))
+    .withColumn('rownum1_round1', f.when((f.col('rownum') == 1) & (f.col('n_decimal_points') == 2), f.round(f.col('VALUE1_CONDITION'), 1)).otherwise(None))
+    .withColumn('rownum1_round0', f.when((f.col('rownum') == 1) & (f.col('n_decimal_points').isin([1,2])), f.round(f.col('VALUE1_CONDITION'), 0)).otherwise(None))
+    .withColumn('rownum1_round1_egen', f.min(f.col('rownum1_round1')).over(win_bmi))
+    .withColumn('rownum1_round0_egen', f.min(f.col('rownum1_round0')).over(win_bmi))
+    .withColumn('to_drop', f.when(
+        (f.col('VALUE1_CONDITION') == f.col('rownum1_round1_egen')) | (f.col('VALUE1_CONDITION') == f.col('rownum1_round0_egen')), 1).otherwise(0)
+    )
+)
+
+# Drop the flagged records
+bmi_clean = (
+    bmi_conflicts_rownum
+    .where(f.col('to_drop') == 0)
+    .select(bmi_outer.columns)
+)  
+
+# COMMAND ----------
+
+# reassemble the complete marker table, now with cleaned BMI ties 
+history_5_bmi = bmi_outer.unionByName(bmi_clean) 
+
+# temp save
+history_5_bmi = temp_save(df=history_5_bmi, out_name=f'{Project.name}_tmp_covariates_markers_history_5_bmi_5years')
+
+# check
+assert (bmi_conflicts.select('PERSON_ID').distinct().count() - bmi_clean.select('PERSON_ID').distinct().count()) == 0
+
+# COMMAND ----------
+
+# MAGIC %md ## 6.3 Row number
+# MAGIC
+# MAGIC We take the quick and easy approach of just choosing the first record per person per marker whenever we have conflicts. Hopefully our previous curation will have prioritised the most accurate & within-range records. 
+
+# COMMAND ----------
+
+history_6_rowed = (
+    history_5_bmi
+    # Index distinct values for each biomarker that had the same date
+    .withColumn('_row_num', f.row_number().over(window_row_num))
+    # Augment with the maximum value of _row_num per biomarker per person
+    .withColumn('_row_num_max', f.count(f.lit(1)).over(window_row_num_max))
+    .where(f.col('_row_num') == 1)
+    .withColumnRenamed('_row_num_max', 'n_distinct_values_on_date')
+    .withColumn('flag_multi_distinct_values_on_date', f.when(f.col('n_distinct_values_on_date') > 1, 1).otherwise(0))
+)
+
+# Temp save
+history_6_rowed = temp_save(history_6_rowed, f'{Project.name}_tmp_covariates_markers_history_6_rowed_5years')
+
+# COMMAND ----------
+
+# DBTITLE 1,Load (if re-running)
+# Load 
+history_6_rowed = spark.table(f'{Project.dsa}.{Project.name}_tmp_covariates_markers_history_6_rowed_5years')
+
+# COMMAND ----------
+
+# MAGIC %md # 7. Check
+
+# COMMAND ----------
+
+# MAGIC %md ## 7.1 SBP check 
+# MAGIC
+# MAGIC In many cases, the systolic BP is recorded in `VALUE1_CONDITION` and diastolic BP in `VALUE2_CONDITION` in the same GDPPR record. We verify that there are no/very few records where the diastolic BP exceeds the systolic under this schema. We also find that in 40% of matched records, only systolic is given. 
+
+# COMMAND ----------
+
+tmp_check_bp = (
+    history_6_rowed
+    .where(f.col('name') == 'sbp')
+    .withColumn('check', 
+        f.when(f.col('VALUE2_CONDITION').isNull(), 0)
+        .when((f.col('VALUE2_CONDITION').isNotNull()) & (f.col('VALUE1_CONDITION') > f.col('VALUE2_CONDITION')), 1)
+        .when((f.col('VALUE2_CONDITION').isNotNull()) & (f.col('VALUE1_CONDITION') <= f.col('VALUE2_CONDITION')), 2)
+        .otherwise(0)
+    )
+)
+tab(tmp_check_bp, 'check')
+
+# COMMAND ----------
+
+# MAGIC %md # 8. Convert
+# MAGIC We apply the following transformations/conversions:
+# MAGIC  - We convert creatinine from umol/L to mg/dL with a conversion factor of 88.42.
+# MAGIC  - We derive eGFR from creatinine using the CKD-EPI 2021 Age-Sex equation.
+# MAGIC  - Some HbA1c values are recorded as percentages rather than mmol/mol. We convert these to mmol/mol. 
+
+# COMMAND ----------
+
+# MAGIC %md ## 8.1 Creatinine and eGFR
+# MAGIC
+# MAGIC | Sex | Creat. (mg/dL) | CKD-EPI Age-Sex Equation (2021) | 
+# MAGIC | ----------- | ----------- | ----------- | 
+# MAGIC | $$\text{Female}$$ | $$\leq 0.7$$ | $$142 \times (Creat/0.7)^{-0.241} \times 0.9938^{Age} \times 1.012$$ |
+# MAGIC |   | $$> 0.7$$ | $$142 \times (Creat/0.7)^{-1.200} \times 0.9938^{Age} \times 1.012$$ |
+# MAGIC | $$\text{Male}$$  | $$\leq 0.9$$ | $$142 \times (Creat/0.9)^{-0.302} \times 0.9938^{Age}$$ |
+# MAGIC |   | $$> 0.9$$ | $$142 \times (Creat/0.9)^{-1.200} \times 0.9938^{Age}$$ |
+
+# COMMAND ----------
+
+# DBTITLE 1,Define conversion rules
+def convert_creatinine_units(col):
+    # Given a column of creatinine values in micromoles/L (umol/L), converts it to mg/dL with a CF of 88.42
+    return col/88.42
+
+def derive_egfr_from_creatinine(creat, sex, age):
+    return (f
+        .when((sex == 'F') & (creat <= 0.7), (142 * (creat/0.7)**(-0.241) * (0.9938)**(age) * 1.012))
+        .when((sex == 'F') & (creat > 0.7), (142 * (creat/0.7)**(-1.200) * (0.9938)**(age) * 1.012))
+        .when((sex == 'M') & (creat <= 0.9), (142 * (creat/0.7)**(-0.302) * (0.9938)**(age)))
+        .when((sex == 'M') & (creat > 0.9), (142 * (creat/0.7)**(-1.200) * (0.9938)**(age)))
+    )
+
+# COMMAND ----------
+
+# DBTITLE 1,Convert
+df_creatinine = (
+    # Take the subset of matches that correspond to creatinine measurements
+    history_6_rowed.where(f.col('name') == 'creat')
+    # Left join with the cohort table to attach date of birth and sex columns to all measurements
+    .join(cohort.select('PERSON_ID', 'date_of_birth', 'sex'), on='PERSON_ID', how='left')
+    # Take the difference (in years) between the measurement date and DOB to obtain the age at measurement time
+    .withColumn('age', f.datediff('DATE', 'date_of_birth')/365.25)
+    # Convert the measurement units from umol/L to mg/dL
+    .withColumn('VALUE1_CONDITION', convert_creatinine_units(f.col('VALUE1_CONDITION')))
+    # Apply the conversion rule to obtain eGFR from creatinine using creatinine, sex, and age at measurement time
+    .withColumn('VALUE1_CONDITION', derive_egfr_from_creatinine(
+        f.col('VALUE1_CONDITION'), f.col('sex'), f.col('age')
+    ))
+    # Name the new covariate appropriately (still distinguishing from original eGFR measurements)
+    .withColumn('name', f.lit('egfr_creat'))
+    # Remove extra columns to union back with the original matching table
+    .drop('date_of_birth', 'sex', 'age')
+)
+
+# Constrain to the same range as the original eGFR measurements
+df_creatinine = constrain_marker_to_range(df_creatinine, 'egfr_creat', *marker_ranges['egfr'])
+
+history_7_creat_egfr = history_6_rowed.unionByName(df_creatinine)
+
+# COMMAND ----------
+
+# DBTITLE 1,Check
+def boxplot_egfr_vs_estimate(df_markers):
+    df = (
+        df_markers
+        .where(f.col('name').isin('egfr', 'egfr_creat'))
+        .where(f.col('VALUE1_CONDITION').isNotNull() & ~f.isnan('VALUE1_CONDITION'))
+        .select('PERSON_ID', f.col('VALUE1_CONDITION').alias('value'), 'name')
+        .sample(0.1)
+        .toPandas()
+    )
+
+    df = df[~((df.value == np.inf) | (df.value == -np.inf))]
+
+    fig, ax = plt.subplots(1, 1, figsize=(16, 8))
+    sns.violinplot(data=df, x='value', y='name', orient='h')
+
+df = boxplot_egfr_vs_estimate(history_7_creat_egfr)
+
+# COMMAND ----------
+
+# MAGIC %md ## 8.2 HbA1c Units
+# MAGIC
+# MAGIC We assume that recorded values < 15 are percentages rather than mmol/mol. We use the (inverse of the) IFCC-NGSP master equation to convert them:
+# MAGIC
+# MAGIC $$ \text{percentage} = 0.09148 \times \text{mmol/mol} + 2.152 $$
+# MAGIC
+# MAGIC We additionally require that the final HbA1c value be >= 15. 
+
+# COMMAND ----------
+
+def convert_hba1c_units(col):
+    # Given a column of creatinine values in percentage, converts it to mmol/mol using the IFCC-NGSP equation
+    return (col - 2.152) / 0.09148
+
+# Split into two subsets: HbA1c matches and all other matches
+df_hba1c, df_rest = (
+    history_7_creat_egfr.where(f.col('name') == 'hba1c'),
+    history_7_creat_egfr.where(f.col('name') != 'hba1c')
+)
+
+df_hba1c = (
+    df_hba1c
+    # Convert the measurement units from percentage to mmol/mol wherever the value is < 15
+    .withColumn('VALUE1_CONDITION', f.when(
+        f.col('VALUE1_CONDITION') < 15, convert_hba1c_units(f.col('VALUE1_CONDITION'))
+    ).otherwise(f.col('VALUE1_CONDITION')))
+    .where(f.col('VALUE1_CONDITION') >= 15)
+)
+
+# Constrain to the same range as the original hba1c measurements
+df_hba1c = constrain_marker_to_range(df_hba1c, 'hba1c', *marker_ranges['hba1c'])
+
+history_8_hba1c = df_rest.unionByName(df_hba1c)
+
+# COMMAND ----------
+
+# MAGIC %md # 9. Prepare
+
+# COMMAND ----------
+
+# MAGIC %md ## 9.1 Reshape
+
+# COMMAND ----------
+
+# Pivot the markers table from long format (PERSON_ID, MARKER_NAME, VALUE) to wide format (PERSON_ID, COV_MARKER_1_DATE, COV_MARKER_1_VALUE, COV_MARKER_2_DATE, ...)
+history_9_pivoted = (
+    history_8_hba1c
+    .select('PERSON_ID', 'name', 'DATE', 'VALUE1_CONDITION', 'flag_multi_distinct_values_on_date')  
+    # Prepend 'cov_mark_' prefix to all biomarker names
+    .withColumn('name', f.concat(f.lit('cov_mark_'), f.lower(f.col('name'))))
+    # Pivot into wide format
+    .groupBy('PERSON_ID')
+    .pivot('name')
+    .agg(
+        f.min('DATE').alias('date'), f.first('VALUE1_CONDITION').alias('value')
+    )
+)
+
+# COMMAND ----------
+
+# MAGIC %md ## 9.2 Coalesce
+# MAGIC
+# MAGIC We coalesce the eGFR estimate from creatinine and the original eGFR measurements. We prioritise the creatinine-based estimate for eGFR and only keep the original measurement if the estimate the value is missing.
+
+# COMMAND ----------
+
+history_10_coalesced = (
+    history_9_pivoted
+    .withColumn('cov_mark_egfr_value', f.coalesce('cov_mark_egfr_creat_value', 'cov_mark_egfr_value'))
+    .withColumn('cov_mark_egfr_date', f.coalesce('cov_mark_egfr_creat_date', 'cov_mark_egfr_date'))
+    .drop('cov_mark_egfr_creat_value', 'cov_mark_egfr_creat_date')
+)
+
+# COMMAND ----------
+
+# MAGIC %md ## 9.3 Add cohort 
+# MAGIC
+# MAGIC We right-join the curated biomarker values with the cohort table. 
+
+# COMMAND ----------
+
+# DBTITLE 1,Join with cohort
+history_11_cohort = history_10_coalesced.join(inc_exc.select('PERSON_ID'), how='right', on='PERSON_ID')
+followup_2_cohort = followup_1_matched.join(inc_exc.select('PERSON_ID'), how='right', on='PERSON_ID')
+
+# temp save
+history_11_cohort = temp_save(df=history_11_cohort, out_name=f'{Project.name}_tmp_covariates_markers_history_11_cohort_5years')
+
+# COMMAND ----------
+
+# DBTITLE 1,Check
+# Check
+# Ensure we don't have duplicate PERSON_IDs
+assert inc_exc.count() == history_11_cohort.count()
+
+# COMMAND ----------
+
+# MAGIC %md #9. Save
+
+# COMMAND ----------
+
+save_table(df=history_11_cohort, out_name=f'{Project.name}_out_covariates_markers_controls_5years', save_previous=True)
+save_table(df=followup_2_cohort, out_name=f'{Project.name}_out_exposures_markers_controls_5years', save_previous=False)
+
+# COMMAND ----------
+
+# MAGIC %md # 10. Explore
+# MAGIC
+# MAGIC The following section contains data exploration/visualisations. It will only be run if the RUN_DATA_EXPLORATION parameter is set to True.
+
+# COMMAND ----------
+
+from mythoslib import external_flag_parameter
+RUN_DATA_EXPLORATION = external_flag_parameter('RUN_DATA_EXPLORATION', True)
+
+# We stop notebook execution here if RUN_DATA_EXPLORATION is False. Otherwise, we continue. 
+if not RUN_DATA_EXPLORATION:
+    dbutils.notebook.exit('Done')
+
+# COMMAND ----------
+
+# Load
+df_matched = spark.table(f'{Project.dsa}.{Project.name}_out_covariates_markers_controls_5years')
+
+# COMMAND ----------
+
+markers_pretty_print = {
+    'bmi': 'BMI',
+    'sbp': 'Systolic BP',
+    'tchol': 'Total Cholesterol',
+    'hdl': 'HDL Cholesterol',
+    'hba1c': 'HbA1c',
+    'egfr': 'eGFR',
+    'creat': 'Creatinine' #,
+    # 'acr': 'ACR'
+    #'egfr_creat': 'eGFR (from Creatinine)',
+}
+
+# COMMAND ----------
+
+# MAGIC %md ## 10.1 Distribution
+# MAGIC
+# MAGIC We visually inspect the distribution of each curated biomarker.
+
+# COMMAND ----------
+
+def marker_histogram(df_matched, column, xlim, xlabel, ylabel="Number of individuals", rounding=0, bar_width=1, xstep=5, rotate_xticks=False):
+    df = (
+        df_matched 
+        .withColumn('val', f.round(f.col(column), rounding))
+        .groupBy('val')
+        .agg(f.count(f.lit(1)).alias('n'))
+        .toPandas()
+    )
+    fig, ax = plt.subplots(1, 1, figsize=(15,5))
+    ax.bar(df.val.astype('float'), df.n, width=bar_width, edgecolor='black')
+    ax.set(xticks=np.arange(*xlim, step=xstep), xlim=xlim, xlabel=xlabel, ylabel=ylabel)
+    sns.despine(fig, right=True, top=True)
+    if rotate_xticks:
+        ax.tick_params(axis='x', labelrotation=90)
+
+# COMMAND ----------
+
+marker_histogram(df_matched, column='cov_mark_bmi_value', xlim=(10, 100), xlabel="BMI (kg/m^2)", rounding=1, bar_width=1/10)
+marker_histogram(df_matched, column='cov_mark_egfr_value', xlim=(0, 130), xlabel="eGFR (ml/min/1.73m^2)")
+#marker_histogram(df_matched, column='cov_mark_egfr_creat_value', xlim=(0, 130), xlabel="eGFR (Creatinine) (ml/min/1.73m^2)")
+marker_histogram(df_matched, column='cov_mark_hba1c_value', xlim=(0, 150), xlabel="HbA1c (mmol/mol)")
+marker_histogram(df_matched, column='cov_mark_hdl_value', xlim=(0, 5), xlabel="HDL (mmol/L)", rounding=2, bar_width=1/100, xstep=0.1)
+marker_histogram(df_matched, column='cov_mark_creat_value', xlim=(0.1, 200.0), xlabel="creatinine (umol/L)") # umol is micromoles
+#marker_histogram(df_matched, column='cov_mark_height_value', xlim=(100, 250), xlabel="height (meters)", xstep=10)
+marker_histogram(df_matched, column='cov_mark_sbp_value', xlim=(70, 200), xlabel="SBP (mmHg)")
+marker_histogram(df_matched, column='cov_mark_tchol_value', xlim=(0, 10), xlabel="total cholesterol (mmol/L)", rounding=2, bar_width=1/10, xstep=0.1, rotate_xticks=True)
+
+# COMMAND ----------
+
+# MAGIC %md ## 10.2 Coverage
+# MAGIC
+# MAGIC We inspect the proportion of cohort patients that have a non-null & non-NaN value for each collected marker. 
+
+# COMMAND ----------
+
+def dataframe_coverage(df, columns = None): 
+    # Select all the columns of the frame if a list isn't provided
+    columns = columns or df.columns
+    # Magic query to obtain the coverage proportion of each given column
+    result = df.select([(f.count(f.when((~f.isnan(c)) & f.col(c).isNotNull(), c))/f.count(f.lit(1))).alias(c) for c in columns])
+    # Formatting 
+    return result.toPandas().T.reset_index().rename(columns={'index': 'Column', 0: 'Coverage'})
+
+cov_columns = [f'cov_mark_{_}_value' for _ in marker_ranges.keys()]
+display(dataframe_coverage(df_matched, cov_columns))
+
+# COMMAND ----------
+
+# MAGIC %md ## 10.3 Missingness distribution
+# MAGIC
+# MAGIC We inspect the missingness of each collected marker over ages - to see to what degree they are less available for younger people. 
+
+# COMMAND ----------
+
+# We join the matched covariate table with the cohort table, and obtain an age variable indicating the current age at the baseline date
+df_matched_ages = (
+    df_matched
+    .join(cohort.select('PERSON_ID', 'date_of_birth'), on='PERSON_ID', how='inner')
+    .join(inc_exc.select('PERSON_ID', 'entry_date'), on='PERSON_ID', how='inner')
+    .withColumn('Age', f.datediff(f.col('entry_date'), f.col('date_of_birth'))/365.25)
+)
+
+# COMMAND ----------
+
+import matplotlib.ticker as ticker
+def bar_availability_over_ages(df_matched_ages):
+    # Helper function to aggregate a grouped column into its completeness:
+    # Take the count of values that are not Null or NaN and divide by the total length of the column
+    column_completeness = lambda col: (f.count(f.when((~f.isnan(col)) & f.col(col).isNotNull(), col))/f.count(f.lit(1)))
+
+    # Formulate the table of covariate availability
+    df = (
+        df_matched_ages
+        # Round the age to the nearest year
+        .withColumn('Age (years)', f.round(f.col('Age')).cast('integer'))
+        # Group the patient records by discrete age
+        .groupby('Age (years)')
+        # Aggregate each covariate column of interest by its completeness
+        .agg(*[
+            column_completeness(f'cov_mark_{key}_value').alias(value) 
+            for key, value in markers_pretty_print.items()
+        ])
+        # Melt from wide format (Age (years), BMI, Systolic BP, ...) to long (Age (years), name = [BMI, Systolic BP,...], value = ...)
+        .melt(ids='Age (years)', values=list(markers_pretty_print.values()), variableColumnName='name', valueColumnName='value')
+    ).toPandas()
+
+    fig = sns.catplot(
+        # Plotting parameters: Bar plot over discrete ages, faceted by covariate
+        data=df, x='Age (years)', y='value', col='name', kind='bar',
+        # Appearance: 4 facets per row, 4x4 squares, no shared axes
+        col_wrap=4, height=4, sharex=False, sharey=False
+    )
+
+    # Magic to clean up the x-axes: We tick every 10 years
+    for ax in fig.axes:
+        ticks = np.array([18, 20, 30, 40, 50, 60, 70, 80, 89])
+        ax.xaxis.set_major_locator(ticker.FixedLocator(locs=ticks-18))
+        ax.xaxis.set_major_formatter(ticker.FixedFormatter(ticks))
+
+    # By default, FacetGrid would title each sub-plot as "name=nonfatal_stroke". This command just removes the "name=" part. 
+    fig.set_titles('{col_name}')
+    return fig 
+
+fig = bar_availability_over_ages(df_matched_ages)

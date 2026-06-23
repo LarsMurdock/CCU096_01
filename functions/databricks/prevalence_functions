@@ -1,0 +1,261 @@
+# Databricks notebook source
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql.types import DateType
+import datetime
+from dateutil.relativedelta import relativedelta
+
+def generate_month_calendar(start_date_str , end_date_str):
+    """
+    Create a Spark DataFrame of month-level dates from start_date_str up to end_date_str (inclusive).
+    Each row has a single column 'month_date' (DateType) for the 1st of that month.
+    """
+    start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d")
+    end_date   = datetime.datetime.strptime(end_date_str, "%Y-%m-%d")
+
+    # Build a Python list of month start-dates
+    dates = []
+    current = start_date
+    while current <= end_date:
+        # Use the 1st day of each month
+        first_of_month = current.replace(day=1)
+        if not dates or dates[-1] != first_of_month:  # avoid duplicates
+            dates.append(first_of_month)
+        current = current + relativedelta(months=1)
+
+    # Convert list of datetimes to list of tuples for Spark
+    date_tuples = [(d,) for d in dates]
+
+    # Build DataFrame
+    spark = SparkSession.getActiveSession()
+    calendar_df = spark.createDataFrame(date_tuples, ["month_date"]) \
+                       .withColumn("month_date", F.col("month_date").cast(DateType()))
+
+    return calendar_df
+
+
+def compute_prevalence(
+    df,
+    start_date_str: str = Project.study_start_date,
+    end_date_str: str = Project.study_end_date,
+    by=None
+):
+    """
+    Compute prevalence for each month between start_date_str and end_date_str.
+    A faster PySpark adaptation of the original R function 'compute_prevalence()'.
+
+    Arguments:
+    ----------
+    df : Spark DataFrame
+        Must have columns:
+          - PERSON_ID                (unique individual ID)
+          - entry_date, exit_date    (Date or Timestamp)
+          - cov_hx_first_obesity_date (Date or Timestamp)
+          - (optional) <by> column for subgroup analyses
+    start_date_str, end_date_str : str (YYYY-MM-DD)
+        Defines the monthly range to analyze.
+    by : str or None
+        Name of a column for subgroup analyses (similar to .by in R).
+        If None, no subgroup breakdown.
+
+    Returns:
+    --------
+    Spark DataFrame with columns:
+      - month_date
+      - numerator (distinct count of individuals with cov_hx_first_obesity_date <= entry_date)
+      - denominator (distinct count of individuals eligible that month)
+      - prevalence (numerator / denominator * 100)
+      - if `by` was provided, that column also appears in the result
+    """
+    spark = df.sparkSession
+
+    # 1) Build the monthly calendar DataFrame
+    calendar_df = generate_month_calendar(start_date_str, end_date_str)
+
+    # 2) Join on condition that person is "eligible" for that month:
+    #    entry_date <= month_date < exit_date
+    joined = (
+        df.join(
+            calendar_df,
+            (F.col("entry_date") <= F.col("month_date")) &
+            (F.col("exit_date")   >  F.col("month_date")),
+            how="inner"
+        )
+    )
+
+    # 3) Group By: month_date, plus optional grouping column
+    group_cols = ["month_date"]
+    if by is not None:
+        group_cols.append(by)
+
+    # 4) Single aggregation:
+    #    - denominator = distinct PERSON_ID among the joined set
+    #    - numerator   = distinct PERSON_ID among those also meeting cov_hx_first_obesity_date <= month_date
+    #      (replicates 'filter(cov_hx_first_obesity_date <= month_date)' in the R code)
+    #    We can do this via conditional counting of distinct IDs.
+    #    Because PySpark doesn't natively do countDistinct(WHEN(...)), we have two typical approaches:
+    #    a) Approximate approach: approx_count_distinct( when(...) , rsd=... )
+    #    b) Group by + filter => multi-step approach
+    #
+    # For EXACT distinct counting in one pass, we need a workaround. The simplest is a multi-step:
+    #  - denominator_df = groupby(...) countDistinct
+    #  - numerator_df = filter(...) groupby(...) countDistinct
+    #  - then join them back
+    #
+    # Here we do a multi-step approach for EXACT distinct.
+
+    # Step A: denominator
+    denominator_df = (
+        joined
+        .groupBy(*group_cols)
+        .agg(F.countDistinct("PERSON_ID").alias("denominator"))
+    )
+
+    # Step B: numerator => filter condition 'cov_hx_first_obesity_date <= month_date'
+    numerator_df = (
+        joined
+        .filter(F.col("cov_hx_first_obesity_date") <= f.col('month_date'))
+        .groupBy(*group_cols)
+        .agg(F.countDistinct("PERSON_ID").alias("numerator"))
+    )
+
+    # Step C: join numerator + denominator
+    result_df = denominator_df.join(numerator_df, on=group_cols, how="left")
+
+    # 5) Compute prevalence = numerator / denominator * 100
+    result_df = result_df.withColumn(
+        "prevalence",
+        F.when(
+            F.col("denominator") != 0,
+            (F.col("numerator") / F.col("denominator")) * F.lit(100)
+        ).otherwise(None)
+    )
+
+    # 6) Return
+    #    You can reorder columns if desired
+    return result_df.select(*group_cols, "numerator", "denominator", "prevalence")
+
+# COMMAND ----------
+
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql.types import DateType
+import datetime
+from dateutil.relativedelta import relativedelta
+
+def compute_prevalence_standardised(
+    df,
+    start_date_str: str = Project.study_start_date,
+    end_date_str: str = Project.study_end_date,
+    by=None
+):
+    """
+    Compute prevalence for each month between start_date_str and end_date_str.
+    A faster PySpark adaptation of the original R function 'compute_prevalence()'.
+
+    Arguments:
+    ----------
+    df : Spark DataFrame
+        Must have columns:
+          - PERSON_ID                (unique individual ID)
+          - entry_date, exit_date    (Date or Timestamp)
+          - cov_hx_first_obesity_date (Date or Timestamp)
+          - (optional) <by> column for subgroup analyses
+    start_date_str, end_date_str : str (YYYY-MM-DD)
+        Defines the monthly range to analyze.
+    by : str or None
+        Name of a column for subgroup analyses (similar to .by in R).
+        If None, no subgroup breakdown.
+
+    Returns:
+    --------
+    Spark DataFrame with columns:
+      - month_date
+      - numerator (distinct count of individuals with cov_hx_first_obesity_date <= entry_date)
+      - denominator (distinct count of individuals eligible that month)
+      - prevalence (numerator / denominator * 100)
+      - if `by` was provided, that column also appears in the result
+    """
+    spark = df.sparkSession
+
+    # 1) Build the monthly calendar DataFrame
+    calendar_df = generate_month_calendar(start_date_str, end_date_str)
+
+    # 2) Join on condition that person is "eligible" for that month:
+    #    entry_date <= month_date < exit_date
+    joined = (
+        df
+        .join(
+            calendar_df,
+            (F.col("entry_date") <= F.col("month_date")) &
+            (F.col("exit_date")   >  F.col("month_date")),
+            how="inner"
+        )
+        #***REMOVED***.withColumn("date_col_first_of_month", f.trunc(date_col, "month"))
+        .withColumn(
+            "age", f.floor(f.months_between(f.col("month_date"), f.col("date_of_birth")) / 12)
+        )
+        .withColumn(
+            "age_grp_5yr",
+            f.when(
+                f.col("age") <= 89,
+                f.concat_ws(
+                    "-",
+                    (f.floor(F.col("age") / 5) * 5).cast("string"),
+                    ((f.floor(F.col("age") / 5) * 5) + 4).cast("string")
+                )
+            ).otherwise("90+") # if you want a "90+" bucket
+        )
+    )
+
+    # 3) Group By: month_date, plus optional grouping column
+    group_cols = ["month_date", "sex", "age_grp_5yr"]
+    if by is not None:
+        group_cols.append(by)
+
+    # 4) Single aggregation:
+    #    - denominator = distinct PERSON_ID among the joined set
+    #    - numerator   = distinct PERSON_ID among those also meeting cov_hx_first_obesity_date <= month_date
+    #      (replicates 'filter(cov_hx_first_obesity_date <= month_date)' in the R code)
+    #    We can do this via conditional counting of distinct IDs.
+    #    Because PySpark doesn't natively do countDistinct(WHEN(...)), we have two typical approaches:
+    #    a) Approximate approach: approx_count_distinct( when(...) , rsd=... )
+    #    b) Group by + filter => multi-step approach
+    #
+    # For EXACT distinct counting in one pass, we need a workaround. The simplest is a multi-step:
+    #  - denominator_df = groupby(...) countDistinct
+    #  - numerator_df = filter(...) groupby(...) countDistinct
+    #  - then join them back
+    #
+    # Here we do a multi-step approach for EXACT distinct.
+
+    # Step A: denominator
+    denominator_df = (
+        joined
+        .groupBy(*group_cols)
+        .agg(F.countDistinct("PERSON_ID").alias("denominator"))
+    )
+
+    # Step B: numerator => filter condition 'cov_hx_first_obesity_date <= month_date'
+    numerator_df = (
+        joined
+        .filter(F.col("cov_hx_first_obesity_date") <= f.col('month_date'))
+        .groupBy(*group_cols)
+        .agg(F.countDistinct("PERSON_ID").alias("numerator"))
+    )
+
+    # Step C: join numerator + denominator
+    result_df = denominator_df.join(numerator_df, on=group_cols, how="left")
+
+    # 5) Compute prevalence = numerator / denominator * 100
+    result_df = result_df.withColumn(
+        "prevalence",
+        F.when(
+            F.col("denominator") != 0,
+            (F.col("numerator") / F.col("denominator")) * F.lit(100)
+        ).otherwise(None)
+    )
+
+    # 6) Return
+    #    You can reorder columns if desired
+    return result_df.select(*group_cols, "numerator", "denominator", "prevalence")

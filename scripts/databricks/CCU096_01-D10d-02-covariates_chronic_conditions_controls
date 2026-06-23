@@ -1,0 +1,458 @@
+# Databricks notebook source
+# MAGIC %md # CCU096_01-D10d-02-covariates_chronic_conditions_controls
+# MAGIC  
+# MAGIC **Description** This notebook creates the covariates which are the chronic conditions. Conditions are identified based on the codelist defined in D02d-codelist_covariates_chronic_conditions.
+# MAGIC  
+# MAGIC **Authors** Stelios Boulitsakis Logothetis
+# MAGIC
+# MAGIC 
+# MAGIC
+# MAGIC **Acknowledgements** Based on previous work by Carmen Petitjean, Spencer Keene for CCU004_03 and the Health Data Science Team, BHF Data Science Centre.
+# MAGIC
+# MAGIC **Data Output**
+# MAGIC - **`out_covariates_chronic_conditions`** : Chronic condition covariates for the cohort.
+
+# COMMAND ----------
+
+# MAGIC %md # 0. Setup
+
+# COMMAND ----------
+
+# DBTITLE 1,Libraries
+import pyspark.sql.functions as f
+from pyspark.sql import Window
+from pyspark.sql.functions import expr
+import datetime
+
+# COMMAND ----------
+
+# DBTITLE 1,Functions
+# MAGIC %run "shds/common/functions"
+
+# COMMAND ----------
+
+# MAGIC %md # 1. Parameters
+
+# COMMAND ----------
+
+# MAGIC %run "./CCU096_01-D01-parameters"
+
+# COMMAND ----------
+
+# MAGIC %md # 2. Data Sources
+
+# COMMAND ----------
+
+# DBTITLE 1,Import data sources
+codelist     = spark.table(Paths.out_codelist_covariates_chronic_conditions)
+inc_exc = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_controls_start_date')
+
+skinny       = spark.table(Paths.cur_skinny)
+hes_apc_long = spark.table(Paths.cur_hes_apc_long)
+gdppr        = load_dataset_batch('gdppr')
+
+# COMMAND ----------
+
+# MAGIC %md # 3. Prepare
+
+# COMMAND ----------
+
+# MAGIC %md ## 3.1 Cohort
+# MAGIC
+# MAGIC We obtain the patient date of birth from the curated base characteristics (skinny) table. 
+
+# COMMAND ----------
+
+# DBTITLE 1,Join inclusion/exclusion and skinny
+cohort = skinny.select('PERSON_ID', 'date_of_birth').join(inc_exc.select('PERSON_ID', 'entry_date'), on='PERSON_ID', how='inner')
+
+# COMMAND ----------
+
+# MAGIC %md ## 3.2 Codelist
+# MAGIC
+# MAGIC We separate the codelist by terminology (ICD and SNOMED) so we can apply them to the primary and secondary care datasets, respectively.
+
+# COMMAND ----------
+
+# DBTITLE 1,Partition codelist by terminology
+# CAREFUL: Having capitals in the covariate names causes weird bugs in the codelist matching summarisation. Just make them lowercase for convenience
+codelist_prepared = codelist.withColumn('name', f.lower(f.col('name')))
+codelist_icd, codelist_snomed = (
+    codelist_prepared.where(f.col('terminology') == 'ICD10'),
+    codelist_prepared.where(f.col('terminology').isin(['SNOMED', 'DMD']))
+)
+condition_names = codelist_prepared.select('name').distinct().toPandas().name.values
+condition_names
+
+# COMMAND ----------
+
+# MAGIC %md ## 3.3 Data Sources
+# MAGIC
+# MAGIC We prepare GDPPR and HES:
+# MAGIC  1. We select the appropriate columns with the appropriate aliases. The two datasets must have all the same columns to allow a union-by-name when codelist matching.
+# MAGIC  2. We filter out null PERSON_IDs or record dates.
+# MAGIC  3. We inner join with the cohort table to reduce their size a bit. From now on we will only work with the cohort PERSON_IDs. 
+# MAGIC  4. We retain the date of birth from the cohort table as `CENSOR_DATE_START`. This column is necessary for codelist matching, so we might as well make it useful, since we don't prescribe a limit to the look-back period.
+# MAGIC  5. We filter out records prior to the date of birth or after the baseline date. 
+# MAGIC
+
+# COMMAND ----------
+
+# DBTITLE 1,Prepare data sources
+# We perform identical preparation steps for each data source, so we define a function to do it
+prepare_dataset = lambda df: (
+    df
+    # Filter nulls
+    .where(f.col('PERSON_ID').isNotNull() & f.col('DATE').isNotNull())
+    # Join with cohort to limit size a bit
+    .join(cohort.select('PERSON_ID', 'date_of_birth', 'entry_date'), on='PERSON_ID', how='inner')
+    # Necessary column for `codelist_match()`. Might as well use it to filter dates prior to the date of birth
+    .withColumnRenamed('date_of_birth', 'CENSOR_DATE_START')
+    .withColumnRenamed('entry_date', 'CENSOR_DATE_END')
+    # Filter to time window - record must be after the patient's DOB but before the baseline date
+    .where((f.col('DATE') > f.col('CENSOR_DATE_START')) & (f.col('DATE') <= f.col('CENSOR_DATE_END')))
+)
+
+gdppr_prepared, hes_prepared = (
+    prepare_dataset(gdppr.select(f.col('NHS_NUMBER_DEID').alias('PERSON_ID'), 'DATE', 'CODE')),
+    prepare_dataset(hes_apc_long.select('PERSON_ID', f.col('EPISTART').alias('DATE'), 'CODE'))
+)
+
+# COMMAND ----------
+
+# MAGIC %md # 4. Chronic Condition History
+
+# COMMAND ----------
+
+# MAGIC %md ## 4.1 Time windows
+# MAGIC We define time windows for each chronic condition, in case we want them to limit some of them to a specific look-back. E.g., only consider AF up to 5 years before baseline. The given min and max values are measured in months relative to the baseline date.
+
+# COMMAND ----------
+
+condition_names
+
+# COMMAND ----------
+
+# Time-windows (in months, relative to the study start date) for matching chronic conditions.
+# Expected format: "name": (start_months, end_months). 
+# Set end_months to 0 to stop at the baseline date. 
+# Set a large (negative) value for start_months to have unlimited look-back (e.g. -100*12)
+condition_windows = {
+    # 'bronchiectasis': (-10*12, 0),
+    'obesity': (-10*12, 0),
+    'hypertension_drugs': (-10*12, 0),
+    # 'ild': (-10*12, 0),
+    'cancer': (-100*12, 0),
+    'copd': (-100*12, 0),
+    'depression': (-10*12, 0),
+    'hypertension': (-100*12, 0),
+    'hypertension_pregnancy': (-100*12, 0),
+    'diabetes_type1': (-100*12, 0),
+    'diabetes_type2': (-100*12, 0),
+    'diabetes_general': (-100*12, 0),
+    'diabetes_mody': (-100*12, 0),
+    'diabetes_other': (-100*12, 0),
+    'asthma': (-10*12, 0),
+    'hypotension': (-100*12, 0),
+    'underweight': (-100*12, 0),
+    'heart_failure': (-100*12, 0),
+    'ckd': (-100*12, 0),
+    'ihd': (-100*12, 0),
+    'liver_disease': (-100*12, 0),
+    'sleep_apnoea': (-100*12, 0),
+    'pad': (-100*12, 0),
+    'stroke': (-100*12, 0)
+}
+
+assert set(condition_names) == set(condition_windows.keys()), "There are missing or extraneous covariates in the condition_windows dictionary. Make sure it exactly matches the contents of the codelist."
+
+# COMMAND ----------
+
+# MAGIC %md ## 4.2 Create
+# MAGIC
+# MAGIC We obtain the matching using our new codelist matching functions that include covariate-specific time windows. 
+
+# COMMAND ----------
+
+from mythoslib import _codelist_match_all, _codelist_match_filter_time_windows, codelist_match_summary
+def _codelist_match_filter_time_windows(
+    datasets: Dict[str, Tuple[DataFrame, DataFrame, int]],
+    censor_windows: Dict[str, Tuple[int, int]],
+) -> DataFrame:
+    """Given a datasets dictionary with format {dataset_name: (dataset_frame, codelist_frame, ordering_index)},
+    And, A dictionary of covariate-specific time windows with format: Key is the name of a covariate (should match the codelist) and value is a tuple of integers, counting months from the baseline date.
+    Matches the datasets with their codelists, resolving ties via the given ordering index and restricts the results to fall within the covariate-specific time windows.
+    Returns all matches across all datasets.
+    Updated 2024-11-20 SBL for RF to allow individual-specific baseline dates
+    """
+    # Convert the time window dictionary into a dataframe suitable for JOINs
+
+    df_windows = spark.createDataFrame(
+        pd.DataFrame.from_dict(
+            censor_windows,
+            orient="index",
+            columns=["WINDOW_DATE_START", "WINDOW_DATE_END"],
+        ).reset_index()
+    ).withColumnRenamed("index", "name")
+
+    # Invoke codelist_match_all to do most of the matching. We will then filter that result
+    result = _codelist_match_all(datasets)
+
+    # Filter with covariate-specific time windows
+    result = (
+        result
+        .join(df_windows, on="name", how="outer")
+        .where(
+            (f.col("DATE") > f.add_months(f.col('CENSOR_DATE_END'), f.col("WINDOW_DATE_START")))
+            & (f.col("DATE") <=  f.add_months(f.col('CENSOR_DATE_END'), f.col("WINDOW_DATE_END")))
+        )
+    )
+
+    return result
+
+# COMMAND ----------
+
+# DBTITLE 1,Match codelist and datasets
+
+# dictionary - dataset, codelist, and ordering in the event of tied records
+dict_in = {
+    'hes_apc': (hes_prepared, codelist_icd, 1),
+    'gdppr': (gdppr_prepared, codelist_snomed, 2)
+}
+
+# Run full (time-windowed) codelist match and codelist match summary functions
+hx_out_all = _codelist_match_filter_time_windows(
+    dict_in, censor_windows=condition_windows,
+)
+#hx_out_summ_name, hx_out_summ_name_code = codelist_match_summary(dict_in, hx_out_all)
+
+hx_out_all = temp_save(df=hx_out_all, out_name=f'{Project.name}_tmp_covariates_chronic_conditions_all')
+#hx_out_summ_name = temp_save(df=hx_out_summ_name, out_name=f'{Project.name}_tmp_covariates_chronic_conditions_summ_name')
+#hx_out_summ_name_code = temp_save(df=hx_out_summ_name_code, out_name=f'{Project.name}_tmp_covariates_chronic_conditions_summ_name_code')
+
+# COMMAND ----------
+
+# DBTITLE 1,Load (if re-running)
+hx_out_all = spark.table(f'{Project.dsa}.{Project.name}_tmp_covariates_chronic_conditions_all')
+# hx_out_summ_name = spark.table(f'{Project.dsa}.{Project.name}_tmp_covariates_chronic_conditions_summ_name')
+# hx_out_summ_name_code = spark.table(f'{Project.dsa}.{Project.name}_tmp_covariates_chronic_conditions_summ_name_code')
+
+# COMMAND ----------
+
+# MAGIC %md ### 4.2.1 Check
+# MAGIC
+# MAGIC We inspect the summary table counting how many matches were found per covariate per dataset, and how many distinct PERSON_IDs these correspond to. We also run the following automated checks:
+# MAGIC 1. We ensure that all the matched records lie within the specified covariate-specific time windows. `_check_enforce_condition_specific_dates`
+# MAGIC 2. We ensure we didn't miss any valid records. We do this by manually matching the code list in a simply verifiable way and checking that the output is the same. It's slow to do this for all covariates so we sample one or two. `_check_manually_compare_match_counts`
+
+# COMMAND ----------
+
+# DBTITLE 1,Check 1: No matches outside time windows
+# def _check_get_condition_specific_dates(condition_name):
+#    baseline_date = f.to_date(f.col(Project.study_start_date))
+#    start_months, stop_months = condition_windows[condition_name]
+#    start_date, stop_date = (
+#        f.add_months(baseline_date, start_months),
+#        f.add_months(baseline_date, stop_months)
+#    )
+#    return start_date, stop_date
+
+# def _check_enforce_condition_specific_dates(df_all):
+#    col_start, col_stop = f.when(f.lit(False), Project.study_start_date), f.when(f.lit(False), Project.study_start_date)
+#    for name in condition_windows.keys():
+#        # Get the condition-specific start and stop dates 
+#        start_date, stop_date = _check_get_condition_specific_dates(name)
+#        # Add those dates to the start and stop columns where the covariate name matches the current condition
+#        col_start = col_start.when(f.col('name') == name, start_date)
+#        col_stop = col_stop.when(f.col('name') == name, stop_date)
+    
+#    df_all_aug = df_all.withColumn('start_date', col_start).withColumn('stop_date', col_stop)
+#    assert df_all_aug.where(
+#        (f.col('DATE') < f.col('start_date')) | (f.col('DATE') > f.col('stop_date'))
+#    ).count() == 0
+
+# _check_enforce_condition_specific_dates(hx_out_all)
+
+# COMMAND ----------
+
+# DBTITLE 1,Check 2: No missed matches within time windows
+# def _check_manually_compare_match_counts(condition_name, df_all):
+#    start_date, stop_date = _check_get_condition_specific_dates(condition_name)
+#    codes = codelist.where(f.col('name') == condition_name)
+
+#    manual_match = (
+#        gdppr_prepared
+#        .unionByName(hes_prepared)
+#        .where((f.col('DATE') > f.lit(start_date)) & (f.col('DATE') <= f.lit(stop_date)))
+#        .join(codes, on='code', how='inner')
+#    )
+
+#    auto_match = df_all.where(f.col('name') == condition_name)
+
+    # Ensure same number of matches overall
+#    n_manual_matches, n_auto_matches = manual_match.count(), auto_match.count()
+#    try:
+#        assert n_manual_matches == n_auto_matches
+#    except AssertionError:
+#        raise AssertionError(f'{condition_name}: Manual matches: {n_manual_matches}, Auto matches: {n_auto_matches}')
+
+
+    # Ensure same PERSON_IDs 
+#    manual_ids, auto_ids = manual_match.select('PERSON_ID').distinct().count(), auto_match.select('PERSON_ID').distinct().count()
+#    try:
+#        assert manual_ids == auto_ids
+#    except AssertionError:
+#        raise AssertionError(f'{condition_name}: Manual IDs: {manual_ids}, Auto IDs: {auto_ids}')
+
+# _check_manually_compare_match_counts('asthma', hx_out_all)
+# _check_manually_compare_match_counts('diabetes_type2', hx_out_all)
+
+# COMMAND ----------
+
+# MAGIC %md ## 4.4 Diabetes
+# MAGIC
+# MAGIC We reduce the diabetes matches down to type 1, type 2, and MODY based on age. 
+# MAGIC  - Records of general diabetes >=30 years old are assumed to be type 2.
+# MAGIC  - Records of general diabetes <30 years old are assumed to be type 1. 
+# MAGIC
+# MAGIC We augment the (wide-format) table of first matched chronic conditions with the age of developing diabetes (overall and type 2).
+
+# COMMAND ----------
+
+# DBTITLE 1,Obtain a table of age at earliest diabetes diagnosis
+diabetes_phenotypes = ['diabetes_type1', 'diabetes_type2', 'diabetes_mody', 'diabetes_general', 'diabetes_other']
+generic_phenotypes = diabetes_phenotypes[-2:]
+
+# Take two subsets of the full matching table: One with generic diabetes codes, and one with all the rest
+matches_diabetes, matches_other = (
+    hx_out_all.where(f.col('name').isin(generic_phenotypes)),
+    hx_out_all.where(~f.col('name').isin(generic_phenotypes))
+)
+
+matches_diabetes = (
+    matches_diabetes 
+    # Left join with the skinny table to obtain DOB at the record date for each matched record
+    .join(skinny.select('PERSON_ID', 'date_of_birth'), on='PERSON_ID', how='left')
+
+    # Obtain the age at the record date 
+    .withColumn('_diabetes_age', f.datediff('DATE', 'date_of_birth')/365.25)
+
+    # Overwrite the generic diabetes phenotypes according to the age at the record date
+    .withColumn('name', f 
+        .when(f.col('_diabetes_age') >= 30, 'diabetes_type2')
+        .when(f.col('_diabetes_age') < 30, 'diabetes_type1')
+    )
+)
+
+print(f"Have {matches_diabetes.count()} generic diabetes codes out of {hx_out_all.where(f.col('name').isin(diabetes_phenotypes)).count()} total diabetes codes")
+print(f"Re-typing {matches_diabetes.where(f.col('_diabetes_age') >= 30).count()}/{matches_diabetes.count()} generic diabetes codes as type 2")
+print(f"Re-typing {matches_diabetes.where(f.col('_diabetes_age') < 30).count()}/{matches_diabetes.count()} generic diabetes codes as type 1")
+
+# Drop extraneous columns and re-combine the two subsets of the full matching table
+hx_out_all = matches_other.unionByName(
+    matches_diabetes.drop('date_of_birth', '_diabetes_age')
+)
+
+# COMMAND ----------
+
+# DBTITLE 1,Check
+# Ensure we have re-typed all generic diabetes matches
+assert hx_out_all.where(f.col('name').isin(generic_phenotypes)).count() == 0
+
+# COMMAND ----------
+
+# MAGIC %md ## 4.5 Re-format
+# MAGIC
+# MAGIC We finally obtain the tables of latest matches per condition per person, in long and wide formats.
+
+# COMMAND ----------
+
+# DBTITLE 1,Long and wide latest matches tables
+from mythoslib import _codelist_match_1st, _codelist_match_1st_wide
+hx_out_last = _codelist_match_1st(hx_out_all, latest_event=True)
+hx_out_last_wide = _codelist_match_1st_wide(hx_out_last, name_prefix='cov_chron_', datasets=dict_in)
+
+hx_out_last = temp_save(df=hx_out_last, out_name=f'{Project.name}_tmp_covariates_chronic_conditions_last')
+hx_out_last_wide = temp_save(df=hx_out_last_wide, out_name=f'{Project.name}_tmp_covariates_chronic_conditions_last_wide')
+
+# COMMAND ----------
+
+# DBTITLE 1,Load (if re-running)
+hx_out_last = spark.table(f'{Project.dsa}.{Project.name}_tmp_covariates_chronic_conditions_last')
+hx_out_last_wide = spark.table(f'{Project.dsa}.{Project.name}_tmp_covariates_chronic_conditions_last_wide')
+
+# COMMAND ----------
+
+# MAGIC %md ### 4.5.1 Check
+# MAGIC
+# MAGIC 3. We ensure the wide-format output table matches the results of the long format table (as a sanity check for our filtering).
+
+# COMMAND ----------
+
+# DBTITLE 1,Check 3: Ensure long results match wide results
+def _check_long_vs_wide(df_long, df_wide):
+    # Messing around with column names
+    wide_columns = [f'cov_chron_{name}_flag' for name in condition_names]
+    column_map = {f'sum(cov_chron_{name}_flag)': name for name in condition_names}
+
+    # Obtain the sum per column in the wide-format table
+    wide_counts = df_wide.select(wide_columns).groupby().sum().toPandas()
+    # Obtain the aggregate count of rows per covariate in the long-format table
+    long_counts =  df_long.groupby('name').count().toPandas()
+    
+    # Messing around with pandas to make the comparison
+    wide_counts = wide_counts.T[0].rename('wide')
+    wide_counts.index = wide_counts.index.map(column_map)
+    long_counts = long_counts.set_index('name')['count'].rename('long')
+    
+    # Join the two sets of counts and take the difference
+    both = pd.concat((wide_counts, long_counts), axis=1).fillna(0)
+    both['diff'] = (both.wide - both.long)
+
+    # Ensure the difference is zero for all covariates
+    try:
+        assert not (both['diff'] > 0).any() 
+    except AssertionError:
+        return both
+
+_check_long_vs_wide(hx_out_last, hx_out_last_wide)
+
+# COMMAND ----------
+
+# MAGIC %md ## 4.6 Augment
+# MAGIC
+# MAGIC We augment the final wide-format chronic conditions table with a column for age at diabetes diagnosis. We additionally fill null flags with zeros
+
+# COMMAND ----------
+
+# DBTITLE 1,Augment with diabetes ages
+hx_out_last_wide_aug = (
+    hx_out_last_wide
+    # Right-join with cohort table to obtain the DOB for everyone (in the cohort)
+    .join(cohort.select('PERSON_ID', 'date_of_birth'), on='PERSON_ID', how='right')
+
+    # Augment with ages at the time of diabetes diagnosis
+    .withColumn('cov_chron_diabetes_type2_age', f.datediff('cov_chron_diabetes_type2_date', 'date_of_birth')/365.25)
+    .drop('date_of_birth')
+
+    .na.fill(0, subset=[_ for _ in hx_out_last_wide.columns if _.endswith('_flag')])
+)
+
+# COMMAND ----------
+
+# DBTITLE 1,Check 4: Ensure number of IDs is correct
+# Check the number of PERSON_IDs is correct 
+assert hx_out_last_wide_aug.count() == cohort.count()
+
+# COMMAND ----------
+
+# MAGIC %md # 5. Save
+
+# COMMAND ----------
+
+save_table(df=hx_out_last_wide_aug, out_name=f'{Project.name}_out_covariates_chronic_conditions_controls', save_previous=True)
+
+# COMMAND ----------
+
+# DBTITLE 1,Check
+display(hx_out_last_wide_aug)

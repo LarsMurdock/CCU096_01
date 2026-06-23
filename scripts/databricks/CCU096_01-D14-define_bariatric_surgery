@@ -1,0 +1,121 @@
+# Databricks notebook source
+# MAGIC %md # CCU096_01-D14-define_bariatric_surgery
+# MAGIC
+# MAGIC **Description** This notebook defines bariatric surgery events from curated HES procedure data
+# MAGIC
+# MAGIC **Authors** Rob Fletcher
+# MAGIC
+# MAGIC 
+# MAGIC
+# MAGIC **Data Output**
+# MAGIC - **`bariatric_surgery`** : bariatric surgery events in long format
+
+# COMMAND ----------
+
+# MAGIC %md # 0. Setup
+
+# COMMAND ----------
+
+# DBTITLE 1,Libraries
+# dbutils.notebook.exit('skip')
+import pyspark.sql.functions as f
+from pyspark.sql import Window
+from functools import reduce
+import re
+
+# COMMAND ----------
+
+# DBTITLE 1,Common Functions
+# MAGIC %run "shds/common/functions"
+
+# COMMAND ----------
+
+# MAGIC %md # 1. Parameters
+
+# COMMAND ----------
+
+# MAGIC %run "./CCU096_01-D01-parameters"
+
+# COMMAND ----------
+
+# MAGIC %md # 2. Data
+
+# COMMAND ----------
+
+hes_apc_proc = spark.table(f'{Project.dsa}.{Project.name}_cur_hes_apc_proc_long')
+hes_op_proc  = spark.table(f'{Project.dsa}.{Project.name}_cur_hes_op_proc_long')
+
+# First medical record
+first_record = spark.table(f'{Project.dsa}.{Project.name}_tmp_earliest_medical_dates')
+
+# Skinny patient table
+skinny  = spark.table(Paths.cur_skinny)
+
+# Quality assurance data
+qa = spark.table(Paths.tmp_quality_assurance)
+
+# COMMAND ----------
+
+# MAGIC %md # 3. Combine
+
+# COMMAND ----------
+
+first_record_1 = first_record.select('PERSON_ID', f.col('DATE').alias('GDPPR_EARLIEST'))
+
+hes_apc_proc_standardised = (
+    hes_apc_proc
+    .withColumnRenamed('EPIKEY', 'KEY')
+    .withColumnRenamed('EPISTART', 'DATE')
+    .withColumn('SOURCE', f.lit('APC'))
+)
+
+hes_op_proc_standardised = (
+    hes_op_proc
+    .withColumnRenamed('ATTENDKEY', 'KEY')
+    .withColumnRenamed('APPTDATE', 'DATE')
+    .withColumn('SOURCE', f.lit('OP'))
+)
+
+hes_proc_standardised = hes_apc_proc_standardised.unionByName(hes_op_proc_standardised)
+
+# COMMAND ----------
+
+# DBTITLE 1,Filter codes for bariatric surgery
+# Primary procedure: G281, G282, G283, G284, G285, G301, G302, G303, G304, G312, G321, G331, G716. 
+# Revision procedure: G305, G315, G316, G322, G323, G324, G325, G332, G387, G717 
+#***REMOVED***Gastric balloons and bubbles: G481, G485. 
+
+# Define lists of codes for each procedure type
+primary_procedures = ["G281", "G282", "G283", "G284", "G285", 
+                      "G301", "G302", "G303", "G304", "G312", 
+                      "G321", "G331", "G716"]
+
+revision_procedures = ["G305", "G315", "G316", "G322", "G323", 
+                       "G324", "G325", "G332", "G387", "G717"]
+
+gastric_balloons = ["G481", "G485"]
+
+# Combine all codes into one list
+allowed_codes = primary_procedures + revision_procedures + gastric_balloons
+
+hes_bariatric_surgery = (
+    hes_proc_standardised
+    .filter(f.col("CODE").isin(allowed_codes))
+    .withColumn(
+       "procedure_type",
+       f.when(f.col("CODE").isin(primary_procedures), "primary")
+        .when(f.col("CODE").isin(revision_procedures), "revision")
+        .when(f.col("CODE").isin(gastric_balloons), "gastric balloon")
+    )
+    .filter(f.col('DATE') >= '2015-01-01')
+    .join(first_record_1, on='PERSON_ID', how='left')
+    .join(skinny, on='PERSON_ID', how='left')
+    .join(qa.where(f.col('_rule_total').isNull()).select('PERSON_ID'), on='PERSON_ID', how='inner')
+)
+
+# To view the results
+display(hes_bariatric_surgery)
+
+# COMMAND ----------
+
+save_table(df=hes_bariatric_surgery, out_name=f'{Project.name}_out_bariatric_surgery', save_previous=True)

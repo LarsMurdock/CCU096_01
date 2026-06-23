@@ -1,0 +1,334 @@
+# Databricks notebook source
+# MAGIC %md # CCU096_01-D15-export
+# MAGIC
+# MAGIC **Description** This notebook combines the cohort and covariates and exports a dataset for analyses in R. 
+# MAGIC
+# MAGIC **Authors** Stelios Boulitsakis Logothetis
+# MAGIC
+# MAGIC 
+# MAGIC
+# MAGIC **Acknowledgements** 
+# MAGIC
+# MAGIC **Data Output**
+# MAGIC  - `export_obesity_cohort`
+# MAGIC  - `export_glp1ra_data`
+
+# COMMAND ----------
+
+# MAGIC %md # 0. Setup
+
+# COMMAND ----------
+
+# DBTITLE 1,Libraries
+import pyspark.sql.functions as f
+from functools import reduce
+import datetime
+import numpy as np
+import pandas as pd 
+
+import matplotlib
+import matplotlib.pyplot as plt
+import seaborn as sns
+import mythoslib
+
+# COMMAND ----------
+
+# DBTITLE 1,Functions
+# MAGIC %run "shds/common/functions"
+
+# COMMAND ----------
+
+# MAGIC %md # 1. Parameters
+
+# COMMAND ----------
+
+# MAGIC %run "./CCU096_01-D01-parameters"
+
+# COMMAND ----------
+
+# MAGIC %md # 2. Data Sources
+
+# COMMAND ----------
+
+skinny           = spark.table(Paths.cur_skinny)
+inc_exc          = spark.table(Paths.tmp_inc_exc_cohort_2)
+inc_exc_controls = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_controls_start_date')
+
+# Outcomes and history
+# outcomes_grouped_wide = spark.table(Paths.out_outcomes_grouped_wide)
+# outcomes_competing    = spark.table(Paths.out_outcomes_competing)
+
+# Cases and controls 
+cases          = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_cohort_cases')
+controls       = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_cohort_controls')
+earliest_dates = spark.table(f'{Project.dsa}.{Project.name}_tmp_earliest_medical_dates')
+
+# Covariates
+covs_main        = spark.table(Paths.out_covariates)
+covs_markers     = spark.table(Paths.out_covariates_markers)
+covs_markers_5yr = spark.table(f'{Project.dsa}.{Project.name}_out_covariates_markers_5years')
+covs_chronic     = spark.table(Paths.out_covariates_chronic_conditions)
+# covs_covid   = spark.table(Paths.out_covariates_covid)
+
+covs_main_controls        = spark.table(f'{Project.dsa}.{Project.name}_out_covariates_controls')
+covs_markers_controls     = spark.table(f'{Project.dsa}.{Project.name}_out_covariates_markers_controls')
+covs_markers_controls_5yr = spark.table(f'{Project.dsa}.{Project.name}_out_covariates_markers_controls_5years')
+covs_chronic_controls     = spark.table(f'{Project.dsa}.{Project.name}_out_covariates_chronic_conditions_controls')
+
+# GLP1-RA data
+covs_glp1          = spark.table(f'{Project.dsa}.{Project.name}_out_covariates_glp1ra')
+covs_glp1_chronic  = spark.table(f'{Project.dsa}.{Project.name}_out_glp1ra_chronic_conditions')
+covs_obesity_first = spark.table(f'{Project.dsa}.{Project.name}_tmp_obesity_history_wide')
+
+# Bariatric surgery data
+bariatric_surgery = spark.table(f'{Project.dsa}.{Project.name}_out_bariatric_surgery')
+
+# Quality assurance data
+qa = spark.table(Paths.tmp_quality_assurance)
+
+# Repeat values of obesity codes and BMI values
+codes_venn_diag = spark.table(f'{Project.dsa}.{Project.name}_tmp_obesity_codes_all_venn_diagram')
+bmi_venn_diag   = spark.table(f'{Project.dsa}.{Project.name}_tmp_gdppr_bmi_all_venn_diagram')
+
+# COMMAND ----------
+
+# MAGIC %md # 3. Prepare
+
+# COMMAND ----------
+
+# DBTITLE 1,Rename columns in 5-year covariates markers
+covs_markers_5yr2 = (
+  covs_markers_5yr
+  .select(
+      'PERSON_ID',
+       f.col('cov_mark_bmi_date').alias('cov_mark_bmi_date_5yr'), 
+       f.col('cov_mark_bmi_value').alias('cov_mark_bmi_value_5yr')
+  )
+)
+
+covs_markers_controls_5yr2 = (
+  covs_markers_controls_5yr
+  .select(
+      'PERSON_ID',
+       f.col('cov_mark_bmi_date').alias('cov_mark_bmi_date_5yr'), 
+       f.col('cov_mark_bmi_value').alias('cov_mark_bmi_value_5yr')
+  )
+)
+
+# COMMAND ----------
+
+# DBTITLE 1,Prepare obesity history and sources
+obesity_sources = (
+    covs_obesity_first
+    .withColumn(
+        'cov_hx_first_obesity_source', 
+        f.when(f.col('cov_hx_first_obesity_date') == f.col('cov_hx_bmi30_date'), f.lit('bmi'))
+         .when(f.col('cov_hx_first_obesity_date') == f.col('cov_hx_bmi275_date'), f.lit('bmi'))
+         .when(f.col('cov_hx_first_obesity_date') == f.col('cov_hx_obesity_date'), f.col('cov_hx_obesity_source'))
+        .otherwise(f.lit('No record of obesity'))
+    )
+    .withColumn(
+        'cov_hx_first_obesity_30kgm2_source', 
+        f.when(f.col('cov_hx_first_obesity_30kgm2_date') == f.col('cov_hx_bmi30_date'), f.lit('bmi'))
+         # There shouldn't be many of these (10s) bt owing to how age is calculated it can happen...
+         .when(f.col('cov_hx_first_obesity_30kgm2_date') == f.col('cov_hx_first_obesity_adol_f_date'), f.lit('bmi'))
+         .when(f.col('cov_hx_first_obesity_30kgm2_date') == f.col('cov_hx_first_obesity_adol_m_date'), f.lit('bmi'))
+         .when(f.col('cov_hx_first_obesity_30kgm2_date') == f.col('cov_hx_obesity_date'), f.col('cov_hx_obesity_source'))
+        .otherwise(f.lit('No record of obesity'))
+    )
+    # .select(
+    #     'person_id', 'cov_hx_first_obesity_date', 'cov_hx_first_obesity_30kgm2_date', 'cov_hx_first_obesity_source', 'cov_hx_first_obesity_30kgm2_source'
+    # )
+)
+display(obesity_sources.where(f.col('PERSON_ID') == ""))
+
+# COMMAND ----------
+
+# DBTITLE 1,Join tables
+from mythoslib import join_all
+
+# Earliest medical record dates
+earliest_dates_1 = earliest_dates.select('PERSON_ID', f.col('DATE').alias('GDPPR_EARLIEST'))
+
+# Take the subset of skinny after inclusion/exclusion criteria
+cohort_0   = skinny.join(inc_exc.select('PERSON_ID', 'cov_hx_first_obesity_30kgm2_date'), on='PERSON_ID', how='inner')
+controls_0 = skinny.join(inc_exc_controls.select('PERSON_ID', 'entry_date'), on='PERSON_ID', how='inner')
+
+# Add all covariates
+cohort_0 = join_all(cohort_0, covs_main, covs_markers, covs_markers_5yr2, covs_chronic, earliest_dates_1, on='PERSON_ID', how='left')
+
+controls_0 = join_all(controls_0, covs_main_controls, covs_markers_controls, covs_markers_controls_5yr2, covs_chronic_controls, earliest_dates_1, on='PERSON_ID', how='left')
+
+# Add all history and outcomes
+# cohort_0 = join_all(
+#    cohort_0, 
+#    outcomes_grouped_wide.select('PERSON_ID', 'out_cvd_flag', 'out_ckd_flag'),
+#    outcomes_competing.select('PERSON_ID', f.lit(1).alias('out_cmp_flag')),
+#    history_wide.select('PERSON_ID', 'cov_hx_cvd_flag', 'cov_hx_ckd_flag'),
+#    on='PERSON_ID', how='left'
+#)
+
+# GLP1-RA data
+covs_glp1_chronic = covs_glp1_chronic.withColumnRenamed('glp1ra_date', 'DATE').drop('ROW_ID')
+glp1ra_0 = (
+    join_all(covs_glp1, covs_obesity_first.select('PERSON_ID', 'cov_hx_first_obesity_date', 'cov_hx_first_obesity_30kgm2_date'), on='PERSON_ID', how='left')
+    .withColumn("DATE", f.last_day(f.col("DATE")))
+    .join(covs_glp1_chronic.withColumnRenamed('glp1ra_date', 'DATE'), on=['PERSON_ID', 'DATE'], how='left')
+)
+
+# COMMAND ----------
+
+# MAGIC %md # 3. Variable Selection
+
+# COMMAND ----------
+
+# DBTITLE 1,Augment
+# start_date, end_date = f.to_date(f.lit(Project.study_start_date)), f.to_date(f.lit(Project.study_end_date))
+cohort_1 = (
+    cohort_0 
+    .withColumn('study_start_age', f.round(f.datediff(f.col('cov_hx_first_obesity_30kgm2_date'), f.col('date_of_birth'))/365.25, 2))
+    .withColumn(
+        'imd_decile', 
+        f.when(f.col('imd_decile') == 1, f.lit('1 (Most deprived)'))
+         .when(f.col('imd_decile') == 10, f.lit('10 (Least deprived)'))
+         .otherwise(f.col('imd_decile'))
+    )
+)
+
+controls_1 = (
+    controls_0 
+    .withColumn('study_start_age', f.round(f.datediff(f.col('entry_date'), f.col('date_of_birth'))/365.25, 2))
+    .withColumn(
+        'imd_decile', 
+        f.when(f.col('imd_decile') == 1, f.lit('1 (Most deprived)'))
+         .when(f.col('imd_decile') == 10, f.lit('10 (Least deprived)'))
+         .otherwise(f.col('imd_decile'))
+    )
+    .drop(
+        'sex_code', 'ethnicity_raw_code', 'ethnicity_raw_description', 'ethnicity_18_code', 'date_of_birth_tie_flag', 'sex_tie_flag', 'ethnicity_18_tie_flag', 'ethnicity_5_tie_flag', 'lsoa_tie_flag', 'cov_mark_bmi_date', 'cov_mark_egfr_date', 'cov_mark_hba1c_date', 'cov_mark_hdl_date', 'cov_mark_sbp_date', 'cov_mark_tchol_date', 'cov_mark_bmi_date_5yr', 'cov_chron_cancer_date', 'cov_chron_cancer_source', 'cov_chron_ckd_date', 'cov_chron_ckd_source',
+        'cov_chron_copd_date', 'cov_chron_copd_source', 'cov_chron_depression_date', 'cov_chron_depression_source', 'cov_chron_diabetes_general_date', 'cov_chron_diabetes_general_source', 'cov_chron_diabetes_mody_date', 'cov_chron_diabetes_mody_source', 'cov_chron_diabetes_other_date', 'cov_chron_diabetes_other_source', 'cov_chron_diabetes_type1_date', 'cov_chron_diabetes_type1_source', 'cov_chron_diabetes_type2_date', 'cov_chron_diabetes_type2_source', 'cov_chron_heart_failure_date', 'cov_chron_heart_failure_source', 'cov_chron_hypertension_date', 'cov_chron_hypertension_source', 'cov_chron_hypertension_drugs_date', 'cov_chron_hypertension_drugs_source', 'cov_chron_hypertension_pregnancy_date', 'cov_chron_hypertension_pregnancy_source', 'cov_chron_hypotension_date', 'cov_chron_hypotension_source', 'cov_chron_ihd_date', 'cov_chron_ihd_source', 'cov_chron_liver_disease_date', 'cov_chron_liver_disease_source', 'cov_chron_asthma_date', 'cov_chron_asthma_source', 'cov_chron_obesity_date', 'cov_chron_obesity_source', 'cov_chron_obesity_flag', 'cov_chron_pad_date', 'cov_chron_pad_source', 'cov_chron_sleep_apnoea_date', 'cov_chron_sleep_apnoea_source', 'cov_chron_stroke_date', 'cov_chron_stroke_source', 'cov_chron_underweight_date', 'cov_chron_underweight_source'
+    )
+)
+
+glp1ra_1 = (
+    glp1ra_0 
+    .withColumn("FIRST_DATE", f.last_day(f.col("DATE")))
+    .withColumn('dispensing_age', f.round(f.datediff(f.col('FIRST_DATE'), f.col('date_of_birth'))/365.25, 2))
+)
+
+# COMMAND ----------
+
+display(cohort_1)
+
+# COMMAND ----------
+
+# DBTITLE 1,Prepare sources for venn diagram
+codes_venn = (
+    codes_venn_diag
+    .select('person_id', 'source')
+    .withColumn(
+        'source', 
+        f.when(f.col('source') == 'hes_apc', 'hes')
+         .when(f.col('source') == 'hes_op', 'hes')
+         .otherwise(f.col('source'))
+    )
+)
+bmi_venn = (
+    bmi_venn_diag
+    .select('person_id')
+    .withColumn('source', f.lit('bmi'))
+)
+venn = codes_venn.unionByName(bmi_venn)
+
+# COMMAND ----------
+
+# DBTITLE 1,Venn diagram
+df_long_dedup = cohort_1.where(f.col('study_start_age') < 100).select('person_id').join(venn, on='person_id', how='left').distinct()
+
+# ---- Pivot to wide with indicator columns ----
+sources = ["bmi", "hes", "gdppr"]  # keep explicit order; omit to pivot all distinct sources
+
+df_wide = (
+    df_long_dedup
+      .groupBy("person_id")
+      .pivot("source", sources)
+      .agg(f.max(f.lit(1)))            # indicator = 1 if present (handles duplicates safely)
+      .fillna(0)
+)
+
+# cast to integers (optional)
+for c in sources:
+    df_wide = df_wide.withColumn(c, f.col(c).cast("int"))
+
+# ---- Cross-tabulate all combinations (like dplyr::count) ----
+combo_counts = (
+    df_wide
+      .groupBy(*sources)
+      .count()
+      .orderBy(*sources)
+)
+
+# Peek
+df_wide.show(truncate=False)
+combo_counts.show(truncate=False)
+
+
+# COMMAND ----------
+
+df_wide.count()
+
+# COMMAND ----------
+
+# DBTITLE 1,Select
+# include = {
+#    # Base characteristics: We prefer the numerical sex code over the string form
+#    '': ['PERSON_ID', 'study_start_age', 'sex_code', '_case_flag'],
+#    # Main covariates: we take the (binarised) smoking indicator
+#    'cov_': ['cov_current_smoker'],
+#    # Markers: We take all the latest marker values (before the baseline date) used in SCORE2-diabetes (which is all of them except creatinine and BMI). 
+#    'cov_mark_': ['cov_mark_egfr_value', 'cov_mark_hba1c_value', 'cov_mark_hdl_value', 'cov_mark_sbp_value', 'cov_mark_tchol_value'],
+#    # Conditions: We take the type 2 diabetes indicator
+#    'cov_chron_': ['cov_chron_diabetes_type2_flag'],
+    # Covid: We omit any covid covariates for now 
+    # 'cov_covid_': [],
+    # Outcomes: We take these from the state transition table, rather than from the cohort table
+    # 'out_': []
+#***REMOVED***}
+# cohort_1 = cohort_1.select(*[__ for _ in include.values() for __ in _])
+
+# COMMAND ----------
+
+# MAGIC %md # 4. Missing Data Handling
+# MAGIC
+# MAGIC For now, we do complete-case analysis.
+
+# COMMAND ----------
+
+# MAGIC %md ## 4.1 Inspect
+
+# COMMAND ----------
+
+# DBTITLE 1,Overall Coverage
+def table_coverage(df): 
+    # Magic query to obtain the coverage count of each given column
+    result = df.select([(f.count(f.when(f.col(c).isNotNull(), c))).alias(c) for c in df.columns])
+    # Transpose table to obtain counts as a column
+    result = result.toPandas().T.reset_index().rename(columns={'index': 'Column', 0: 'Count'})
+    # Take the fraction of the total records for each count
+    result['Coverage'] = (result['Count'] / df.count()).round(4)
+    # Sort by coverage descending 
+    return result.sort_values('Coverage', ascending=True)
+
+display(table_coverage(cohort_1))
+
+# COMMAND ----------
+
+# MAGIC %md # 9. Save
+
+# COMMAND ----------
+
+save_table(cohort_1, f'{Project.name}_export_cohort')
+save_table(controls_1, f'{Project.name}_export_controls')
+save_table(glp1ra_1, f'{Project.name}_export_glp1ra')
+save_table(obesity_sources, f'{Project.name}_export_obesity_sources')
+save_table(qa, f'{Project.name}_export_quality_assurance')

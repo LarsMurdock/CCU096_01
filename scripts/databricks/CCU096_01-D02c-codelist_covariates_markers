@@ -1,0 +1,236 @@
+# Databricks notebook source
+# MAGIC %md # CCU096_01-D02c_codelist_covariates_markers
+# MAGIC
+# MAGIC **Description** This notebook creates the covariate markers codelist, including the following markers:
+# MAGIC - BMI
+# MAGIC - Systolic blood pressure
+# MAGIC - Total cholesterol
+# MAGIC - HDL-cholesterol
+# MAGIC - eGFR
+# MAGIC - Creatinine
+# MAGIC - Triglycerides
+# MAGIC - HbA1c
+# MAGIC
+# MAGIC **Authors** Stelios Boulitsakis Logothetis and Robert Fletcher
+# MAGIC
+# MAGIC 
+# MAGIC
+# MAGIC **Acknowledgements** Based on previous work by Carmen Petitjean, Spencer Keene for CCU004_03 and the Health Data Science Team, BHF Data Science Centre.
+# MAGIC
+# MAGIC **Data output**
+# MAGIC - **`out_codelist_covariates_markers`** : Codelist for all covariate markers.
+
+# COMMAND ----------
+
+# MAGIC %md # 0. Setup
+
+# COMMAND ----------
+
+# DBTITLE 1,Libraries
+import pyspark.sql.functions as f
+from pyspark.sql import Window
+from functools import reduce
+
+# COMMAND ----------
+
+# DBTITLE 1,Common Functions
+# MAGIC %run "shds/common/functions"
+
+# COMMAND ----------
+
+# MAGIC %md # 1. Parameters
+
+# COMMAND ----------
+
+# MAGIC %run "./CCU096_01-D01-parameters"
+
+# COMMAND ----------
+
+# MAGIC %md # 2. Data Sources
+
+# COMMAND ----------
+
+# DBTITLE 1,Import GDPPR ref set
+gdppr_refset = spark.table(Paths.ref_gdppr_refset)
+
+# COMMAND ----------
+
+# MAGIC %md # 3. Codelists
+
+# COMMAND ----------
+
+from typing import Dict 
+from pyspark.sql import DataFrame
+codelists_all: Dict[str, DataFrame] = dict()
+
+# COMMAND ----------
+
+# MAGIC %md ## 3.1 BMI
+# MAGIC
+# MAGIC We collate the BMI codelist from two components:
+# MAGIC  - We have a pre-curated list of SNOMED codes for the specific project, and
+# MAGIC  - We look up more codes in the GDPPR ref set. We look up the cluster label "BMIVAL_COD" which corresponds to "BMI codes with an associated BMI value"
+# MAGIC     - Note: There are additional BMI cluster labels, such as BMI30_COD: "BMI codes >= 30 without an associated numeric value"
+
+# COMMAND ----------
+
+# DBTITLE 1,Derive BMI codelist
+bmi_snomed_codes = [
+    '722595002',
+    '914741000000103',
+    '914731000000107',
+    '914721000000105',
+    '35425004',
+    '48499001',
+    '301331008',
+    '6497000',
+    '310252000',
+    '427090001',
+    '408512008',
+    '162864005',
+    '162863004',
+    '412768003',
+    '60621009',
+    '846931000000101'
+]
+
+# Select from refset based on the curated list of SNOMED codes
+bmi_snomed = gdppr_refset.where(
+    f.col('ConceptId').isin(bmi_snomed_codes)
+).dropDuplicates(['ConceptId'])
+
+# Select based on cluster label BMIVAL_COD
+bmi_cluster = gdppr_refset.where(
+    f.col('Cluster_ID') == 'BMIVAL_COD'
+).dropDuplicates(['ConceptId']).select('ConceptId')
+
+# Merge the two (avoiding duplicates) and re-format to fit our usual codelist table format
+codelist_bmi = (
+    bmi_snomed.join(bmi_cluster, on='ConceptId', how='left')
+    .withColumn('name', f.lit('bmi'))
+    .withColumn('terminology', f.lit('SNOMED'))
+    .withColumnRenamed('ConceptId', 'code')
+    .withColumnRenamed('ConceptId_description', 'term')
+    .select('name', 'terminology', 'code', 'term')
+)
+
+codelists_all['bmi'] = codelist_bmi
+
+# COMMAND ----------
+
+# MAGIC %md ## 3.2 Systolic blood pressure 
+# MAGIC
+# MAGIC We identify concepts in the GDPPR ref set where:
+# MAGIC  - The cluster label BP_COD indicates they're related to blood pressure AND/OR
+# MAGIC  - The text description of the term makes mention of systolic or diastolic.
+# MAGIC
+# MAGIC We use the contents of the term description to determine which codes are for systolic/diastolic and which are more generally blood pressure related. We exclude those that are diastolic BP related.
+# MAGIC
+# MAGIC We further exclude the following project-specific codes (CPJ):
+# MAGIC  - SNOMED	"775671000000104"	Post exercise systolic blood pressure response normal (finding)
+# MAGIC  - SNOMED	"707303003"	Post exercise systolic blood pressure response abnormal (finding)
+# MAGIC  - SNOMED	"707304009"	Post exercise systolic blood pressure response normal (finding)
+# MAGIC
+
+# COMMAND ----------
+
+# DBTITLE 1,Derive systolic BP codelist
+term_contains_word = lambda word: f.lower(f.col('ConceptID_description')).rlike(word)
+blood_pressure_concepts = (
+    gdppr_refset
+    # Pick BP-related concepts from the ref set
+    .where(f.col('Cluster_ID') == 'BP_COD')
+    .dropDuplicates(['ConceptId'])
+    .withColumn('pertains_to', f
+        .when(term_contains_word('systolic'), 'systolic')
+        .when(term_contains_word('diastolic'), 'diastolic')
+        .otherwise('general_bp')
+    )
+)
+
+# Project-specific exclusions for CCU004_03
+sbp_excluded_snomed_codes = ['775671000000104', '707303003', '707304009']
+
+# Pick concepts corresponding to systolic or general BP and re-format the table to match our codelist format
+codelist_sbp = (
+    blood_pressure_concepts
+    .where(f.col('pertains_to').isin(['systolic', 'general_bp']))
+    .where(~f.col('ConceptId').isin(sbp_excluded_snomed_codes))
+    .withColumn('name', f.lit('sbp'))
+    .withColumn('terminology', f.lit('SNOMED'))
+    .withColumnRenamed('ConceptId', 'code')
+    .withColumnRenamed('ConceptId_description', 'term')
+    .select('name', 'terminology', 'code', 'term')
+)
+
+codelists_all['sbp'] = codelist_sbp 
+
+# COMMAND ----------
+
+# MAGIC %md ## 3.3 Others
+# MAGIC
+# MAGIC The remaining markers (Total cholesterol, HDL, eGFR, Creatinine) have a simple (and identical) derivation procedure. We go purely based on cluster labels in the GDPPR ref set. 
+
+# COMMAND ----------
+
+# DBTITLE 1,Define derivation function for ref set
+def extract_simple_marker(name: str, cluster_id: str) -> DataFrame: 
+    """ Given a cluster id for a marker,
+    Obtains all the concepts from the GDPPR ref set that correspond to that cluster id. 
+    Returns the table of concepts re-formatted to match the usual codelist format
+    """
+    return (
+        gdppr_refset
+        .where(f.col('Cluster_ID') == cluster_id)
+        .withColumn('name', f.lit(name))
+        .withColumn('terminology', f.lit('SNOMED'))
+        .withColumnRenamed('ConceptId', 'code')
+        .withColumnRenamed('ConceptId_description', 'term')
+        .select('name', 'terminology', 'code', 'term')
+    )
+
+# COMMAND ----------
+
+# DBTITLE 1,Derive remaining markers
+markers_ids = {
+    'tchol': 'CHOL2_COD', 
+    'hdl': 'HDLCCHOL_COD', 
+    'nhdl': 'NONHDLCCHOL_COD',
+    'egfr': 'EGFR_COD', 
+    'creat': 'CRE_COD',
+    'triglyc': 'TRIGLYC_COD',
+    'hba1c': 'IFCCHBAM_COD'
+}
+
+for marker, cluster_id in markers_ids.items():
+    codelists_all[marker] = extract_simple_marker(marker, cluster_id)
+
+# COMMAND ----------
+
+# MAGIC %md # 4. Check
+
+# COMMAND ----------
+
+# DBTITLE 1,Check codelists
+count_nulls = lambda df: sum(df.select("*").where(f.col(_).isNull()).count() for _ in df.columns)
+required_columns = ['name', 'terminology', 'code', 'term']
+
+for key, codelist in codelists_all.items():
+    assert set(codelist.columns) == set(required_columns), f"Codelist {key} is either missing required columns or has extraneous ones"
+    assert codelist.count() > 0, f"Codelist {key} is empty" 
+    assert count_nulls(codelist) == 0, f'Codelist {key} contains NULLs'
+
+# COMMAND ----------
+
+# MAGIC %md # 5. Save
+
+# COMMAND ----------
+
+# DBTITLE 1,Combine and save full marker codelist
+codelist = reduce(DataFrame.unionByName, codelists_all.values())
+save_table(df=codelist, out_name=f'{Project.name}_out_codelist_covariates_markers', save_previous=True)
+
+# COMMAND ----------
+
+# DBTITLE 1,Check
+display(codelist)

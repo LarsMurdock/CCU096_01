@@ -1,0 +1,48 @@
+name,terminology,code,term,code_type,RecordDate
+copd,SNOMED,106001000119101,chronic obstructive lung disease co-occurrent with acute bronchitis (disorder),1.0,20220215.0
+copd,SNOMED,135836000,end stage chronic obstructive airways disease (disorder),1.0,20220215.0
+copd,SNOMED,13645005,chronic obstructive lung disease (disorder),1.0,20220215.0
+copd,SNOMED,16003001,giant bullous emphysema (disorder),1.0,20220215.0
+copd,SNOMED,16846004,obstructive emphysema (disorder),1.0,20220215.0
+copd,SNOMED,185086009,chronic obstructive bronchitis (disorder),1.0,20220215.0
+copd,SNOMED,195951007,acute exacerbation of chronic obstructive airways disease (disorder),1.0,20220215.0
+copd,SNOMED,195958001,segmental bullous emphysema (disorder),1.0,20220215.0
+copd,SNOMED,195959009,zonal bullous emphysema (disorder),1.0,20220215.0
+copd,SNOMED,196001008,chronic obstructive pulmonary disease with acute lower respiratory infection (disorder),1.0,20220215.0
+copd,SNOMED,233674008,pulmonary emphysema in alpha-1 primary immunodeficiency deficiency (disorder),1.0,20220215.0
+copd,SNOMED,266355005,bullous emphysema with collapse (disorder),1.0,20220215.0
+copd,SNOMED,285381006,acute infective exacerbation of chronic obstructive airways disease (disorder),1.0,20220215.0
+copd,SNOMED,293241000119100,acute exacerbation of chronic obstructive bronchitis (disorder),1.0,20220215.0
+copd,SNOMED,293991000000106,very severe chronic obstructive pulmonary disease (disorder),1.0,20220215.0
+copd,SNOMED,313296004,mild chronic obstructive pulmonary disease (disorder),1.0,20220215.0
+copd,SNOMED,313297008,moderate chronic obstructive pulmonary disease (disorder),1.0,20220215.0
+copd,SNOMED,313299006,severe chronic obstructive pulmonary disease (disorder),1.0,20220215.0
+copd,SNOMED,31898008,paraseptal emphysema (disorder),1.0,20220215.0
+copd,SNOMED,45145000,unilateral emphysema (situation),1.0,20220215.0
+copd,SNOMED,4981000,panacinar emphysema (disorder),1.0,20220215.0
+copd,SNOMED,66110007,chronic diffuse emphysema caused by inhalation of chemical fumes and/or vapors (disorder),1.0,20220215.0
+copd,SNOMED,68328006,centriacinar emphysema (disorder),1.0,20220215.0
+copd,SNOMED,847091000000104,acute non-infective exacerbation of chronic obstructive pulmonary disease (disorder),1.0,20220215.0
+copd,SNOMED,87433001,pulmonary emphysema (disorder),1.0,20220215.0
+copd,SNOMED,408501008,emergency hospital admission for chronic obstructive pulmonary disease (procedure),1.0,20220215.0
+copd,SNOMED,1110861000000102,quality and outcomes framework chronic obstructive pulmonary disease quality indicator-related care invitation (procedure),1.0,20220215.0
+copd,SNOMED,143371000000104,quality and outcomes framework chronic obstructive pulmonary disease quality indicator-related care invitation using preferred method of communication (procedure),1.0,20220215.0
+copd,SNOMED,836477007,chronic emphysema caused by vapor (disorder),1.0,20220215.0
+copd,SNOMED,1010333003,emphysema of left lung (disorder),1.0,20220215.0
+copd,SNOMED,1010334009,emphysema of right lung (disorder),1.0,20220215.0
+copd,ICD10,J41,Simple and mucopurulent chronic bronchitis,,
+copd,ICD10,J410,Simple chronic bronchitis,,
+copd,ICD10,J411,Mucopurulent chronic bronchitis,,
+copd,ICD10,J418,Mixed simple and mucopurulent chronic bronchitis,,
+copd,ICD10,J42X,Unspecified chronic bronchitis,,
+copd,ICD10,J43,Emphysema,,
+copd,ICD10,J430,MacLeod syndrome,,
+copd,ICD10,J431,Panlobular emphysema,,
+copd,ICD10,J432,Centrilobular emphysema,,
+copd,ICD10,J438,Other emphysema,,
+copd,ICD10,J439,"Emphysema, unspecified",,
+copd,ICD10,J44,Other chronic obstructive pulmonary disease,,
+copd,ICD10,J440,Chronic obstructive pulmonary disease with acute lower respiratory infection,,
+copd,ICD10,J441,"Chronic obstructive pulmonary disease with acute exacerbation, unspecified",,
+copd,ICD10,J448,Other specified chronic obstructive pulmonary disease,,
+copd,ICD10,J449,"Chronic obstructive pulmonary disease, unspecified",,

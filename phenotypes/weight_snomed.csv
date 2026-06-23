@@ -1,0 +1,90 @@
+code,code_description,terminology,group
+'104301000000104,[D]Underweight,SNOMED,weight
+'1162388008,Dosing body weight (observable entity),SNOMED,weight
+'139087009,Weight steady (finding),SNOMED,weight
+'139088004,Weight increasing (finding),SNOMED,weight
+'139089007,Weight decreasing (finding),SNOMED,weight
+'139090003,Abnormal weight gain (finding),SNOMED,weight
+'139917004,O/E - obese (finding),SNOMED,weight
+'139987007,O/E - weight greater than 20% below ideal (finding),SNOMED,weight
+'139988002,O/E -weight 10-20% below ideal (finding),SNOMED,weight
+'139990001,O/E - overweight (& [weight 10-20% over ideal]) (finding),SNOMED,weight
+'139991002,O/E weight: [>20% over ideal] or [obese] (finding),SNOMED,weight
+'147251000,Child weight 10th - 24th centile (finding),SNOMED,weight
+'158270004,[D]Abnormal weight gain (situation),SNOMED,weight
+'158271000,[D]Abnormal loss of weight (situation),SNOMED,weight
+'161831008,Weight increasing (finding),SNOMED,weight
+'161832001,Weight decreasing (finding),SNOMED,weight
+'161833006,Abnormal weight gain (finding),SNOMED,weight
+'162690006,On examination - obese (finding),SNOMED,weight
+'162763007,On examination - weight (finding),SNOMED,weight
+'162764001,On examination - weight greater than 20% below ideal (finding),SNOMED,weight
+'162765000,On examination - weight 10-20% below ideal (finding),SNOMED,weight
+'162766004,On examination - weight within 10% ideal (finding),SNOMED,weight
+'162767008,O/E - overweight (& [weight 10-20% over ideal]) (finding),SNOMED,weight
+'162768003,O/E weight: [>20% over ideal] or [obese] (finding),SNOMED,weight
+'162769006,On examination - Underweight (finding),SNOMED,weight
+'197941000000107,Target weight reached (finding),SNOMED,weight
+'206918008,[D]Abnormal weight gain (situation),SNOMED,weight
+'206919000,[D]Abnormal loss of weight (situation),SNOMED,weight
+'206926000,[D]Failure to gain weight (situation),SNOMED,weight
+'212681000000106,Target weight reached,SNOMED,weight
+'212691000000108,Target weight reached,SNOMED,weight
+'22495007,Abnormal weight (finding),SNOMED,weight
+'224994002,Excessive weight gain (finding),SNOMED,weight
+'225171007,Weight and body mass assessment procedure (procedure),SNOMED,weight
+'23712001,Abnormal decrease in weight (finding),SNOMED,weight
+'238131007,Overweight (finding),SNOMED,weight
+'248332009,Weight fluctuates (finding),SNOMED,weight
+'248342006,Underweight (finding),SNOMED,weight
+'248344007,Weight static (finding),SNOMED,weight
+'248345008,Body weight (observable entity),SNOMED,weight
+'248350002,Reference weight (observable entity),SNOMED,weight
+'262285001,Weight decreased (finding),SNOMED,weight
+'262286000,Weight increased (finding),SNOMED,weight
+'267024001,Abnormal weight loss (finding),SNOMED,weight
+'267158006,Weight loss (& abnormal) (finding),SNOMED,weight
+'268915006,On examination - weight 10-20% over ideal (finding),SNOMED,weight
+'268916007,On examination - weight greater than 20% over ideal (finding),SNOMED,weight
+'27113001,Body weight (observable entity),SNOMED,weight
+'271398006,Weight steady (finding),SNOMED,weight
+'275947003,On examination - overweight (finding),SNOMED,weight
+'309257005,Excessive weight loss (finding),SNOMED,weight
+'314670002,Child weight = 0.4th centile (finding),SNOMED,weight
+'363808001,Measured body weight (observable entity),SNOMED,weight
+'36440009,Failure to gain weight (finding),SNOMED,weight
+'392758003,O/E - Underweight (context-dependent category),SNOMED,weight
+'39857003,Weighing patient (procedure),SNOMED,weight
+'400967004,Baseline weight (observable entity),SNOMED,weight
+'401003006,Weight loss from baseline weight (observable entity),SNOMED,weight
+'408388001,[D]Underweight (situation),SNOMED,weight
+'414915002,Obese (finding),SNOMED,weight
+'422503008,Abnormal weight in relation to growth / age standard (finding),SNOMED,weight
+'42287000,Abnormal increase in weight (finding),SNOMED,weight
+'424927000,Body weight with shoes (observable entity),SNOMED,weight
+'425024002,Body weight without shoes (observable entity),SNOMED,weight
+'430237002,Abnormal intentional weight loss (finding),SNOMED,weight
+'43664005,Normal weight (finding),SNOMED,weight
+'443371000124107,Obese class I (finding),SNOMED,weight
+'443381000124105,Obese class II (finding),SNOMED,weight
+'445541000,Dry body weight (observable entity),SNOMED,weight
+'47961000000105,Baseline weight,SNOMED,weight
+'496891000000106,[D]Abnormal weight gain (situation),SNOMED,weight
+'496901000000107,[D]Abnormal loss of weight (situation),SNOMED,weight
+'496961000000106,[D]Failure to gain weight (situation),SNOMED,weight
+'503001000000108,[D]Underweight (situation),SNOMED,weight
+'516391000000108,Dry weight (observable entity),SNOMED,weight
+'55491000237100,Patient weight (observable entity),SNOMED,weight
+'698094009,Measurement of body mass index (procedure),SNOMED,weight
+'734435008,Body weight abnormal for age (finding),SNOMED,weight
+'735395000,Current body weight (observable entity),SNOMED,weight
+'75061000000102,Baseline weight,SNOMED,weight
+'75071000000109,Weight loss from baseline weight,SNOMED,weight
+'784399000,Self reported body weight (observable entity),SNOMED,weight
+'79311000000104,Weight loss from baseline weight,SNOMED,weight
+'808051000000101,Overweight,SNOMED,weight
+'819948005,Obese class III (finding),SNOMED,weight
+'83421005,Failure to lose weight (finding),SNOMED,weight
+'840358001,High body weight (finding),SNOMED,weight
+'89362005,Weight loss (finding),SNOMED,weight
+'8943002,Weight gain (finding),SNOMED,weight

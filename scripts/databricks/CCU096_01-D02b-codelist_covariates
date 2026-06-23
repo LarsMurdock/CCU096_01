@@ -1,0 +1,207 @@
+# Databricks notebook source
+# MAGIC %md # CCU096_01-D02b_codelist_covariates
+# MAGIC
+# MAGIC **Description** This notebook creates the covariates codelist, including the following covariates
+# MAGIC - Smoking
+# MAGIC - Glucagon-like peptide-1 (GLP-1) receptor agonists
+# MAGIC
+# MAGIC **Authors** Stelios Boulitsakis Logothetis and Robert Fletcher
+# MAGIC
+# MAGIC 
+# MAGIC
+# MAGIC **Acknowledgements** Based on previous work by Carmen Petitjean, Spencer Keene for CCU004_03 and the Health Data Science Team, BHF Data Science Centre.
+# MAGIC
+# MAGIC **Data output**
+# MAGIC - **`out_codelist_covariates`** : Codelist for all the above covariates.
+
+# COMMAND ----------
+
+# MAGIC %md # 0. Setup
+
+# COMMAND ----------
+
+# DBTITLE 1,Libraries
+import pyspark.sql.functions as f
+from pyspark.sql import Window
+from functools import reduce
+import pandas as pd
+
+# COMMAND ----------
+
+# DBTITLE 1,Common Functions
+# MAGIC %run "shds/common/functions"
+
+# COMMAND ----------
+
+# MAGIC %md # 1. Parameters
+
+# COMMAND ----------
+
+# MAGIC %run "./CCU096_01-D01-parameters"
+
+# COMMAND ----------
+
+# MAGIC %md # 2. Data Sources
+
+# COMMAND ----------
+
+bhf_phenotypes = spark.table(Paths.ref_bhf_phenotypes)
+pmeds          = load_dataset_batch('pmeds')
+bnf            = spark.table(Paths.ref_bnf_code_info)
+
+# COMMAND ----------
+
+# MAGIC %md # 3. Prepare
+# MAGIC
+# MAGIC We prepare the BHF Phenotypes reference table by dropping duplicate entires. 
+# MAGIC  - There are two duplicates within: PE and liver_disease
+# MAGIC
+# MAGIC We prepare a BNF reference table mapping BNF codes to medication names. We do this in a "data driven" way, rather than relying on any imported reference sets.
+# MAGIC  - We import the NHS BSA Dispensed Medicines dataset and select every distinct BNF code and it's corresponding medication name.
+# MAGIC  - This way we can be sure that all dispensed medicines are present in our mapping table. There is no chance of the table being out of date.
+# MAGIC  - Conversely, we can also be sure that the table doesn't contain any "junk" that is never used in practice.
+
+# COMMAND ----------
+
+# DBTITLE 1,BHF Phenotypes Refrence Table
+# Clean (2 duplicates within - PE and liver_disease)
+bhf_phenotypes = (
+  bhf_phenotypes
+  .select('name', 'terminology', 'code', 'term')
+  .dropDuplicates()
+)
+
+# cache
+bhf_phenotypes.cache()
+
+# COMMAND ----------
+
+# DBTITLE 1,BNF Codes Reference Table (derived from Dispensed Medicines)
+from mythoslib import table_exists
+win = (
+    Window
+    .partitionBy('PrescribedBNFCode')
+    .orderBy('PrescribedBNFName')
+)
+
+pmeds_bnf = (
+    pmeds
+    .select('PrescribedBNFCode', 'PrescribedBNFName')
+    .withColumn('_row_num', f.row_number().over(win))
+    .where(f.col('_row_num') == 1)
+    .drop('_row_num')
+)
+
+# Avoid re-running this unless absolutely necessary
+if not table_exists(f'ccu096_01_tmp_pmeds_bnf', Project.dsa):
+    save_table(pmeds_bnf, f'ccu096_01_tmp_pmeds_bnf')
+    
+pmeds_bnf = spark.table(f'{Project.dsa}.ccu096_01_tmp_pmeds_bnf')
+
+# COMMAND ----------
+
+# MAGIC %md # 4. Codelists
+
+# COMMAND ----------
+
+from typing import Dict 
+from pyspark.sql import DataFrame
+codelists_all: Dict[str, DataFrame] = dict()
+
+# COMMAND ----------
+
+# MAGIC %md ## 4.1 Smoking
+# MAGIC
+# MAGIC We import the smoking SNOMED CSV, which includes smoking status (current, ex, never) and severity (light, moderate, heavy, unknown, or None), and alter it to fit the usual codelist format.
+# MAGIC Each smoking status becomes a separate covariate (name). Severities are disregarded.
+
+# COMMAND ----------
+
+# DBTITLE 1,Import smoking CSV
+import_smoking_status = spark.createDataFrame(
+    pd.read_csv('./codelists/smoking_snomed.csv')
+    [['code', 'term', 'smoking_status', 'severity']]
+)
+
+codelist_smoking_status = (
+    import_smoking_status
+    .withColumn('name',
+        f.when(f.col('smoking_status') == 'Current-smoker', f.lit('smoking_current'))
+        .when(f.col('smoking_status') == 'Ex-smoker', f.lit('smoking_ex'))
+        .when(f.col('smoking_status') == 'Never-smoker', f.lit('smoking_never'))
+        .otherwise(f.col('smoking_status'))
+    )
+    .withColumn('terminology', f.lit('SNOMED'))
+    .select('name', 'terminology', 'code', 'term')
+)  
+
+codelists_all['smoking_status'] = codelist_smoking_status
+
+# COMMAND ----------
+
+# DBTITLE 1,Check
+# Ensure no codes hold both a current and an ex status
+tmp_check_smoking = (
+    codelist_smoking_status
+    .select("name","code")
+    .groupby("code")
+    .pivot("name").agg(f.lit(1)).na.fill(value=0)
+    .filter((f.col('smoking_current') == 1) & (f.col('smoking_ex') == 1))
+)
+
+assert tmp_check_smoking.count() == 0
+
+# COMMAND ----------
+
+# MAGIC %md ## 4.2 Medications
+
+# COMMAND ----------
+
+# MAGIC %md ### 4.2.1 Glucagon-like peptide-1 (GLP-1) receptor agonists
+# MAGIC
+# MAGIC We pull in a BNF codelist of GLP-1 receptor agonists, derived from the BNF/SNOMED mapping data (date: 20 August 2024).
+# MAGIC  - Source: https://www.nhsbsa.nhs.uk/prescription-data/understanding-our-data/bnf-snomed-mapping
+# MAGIC
+# MAGIC **Todo:** Any exclusions from the BNF codes? 
+
+# COMMAND ----------
+
+# DBTITLE 1,Derive GLP-1 receptor agonist codelist
+from mythoslib import any_condition_holds 
+
+codelist_glp1 = (
+    spark.createDataFrame(pd.read_csv('codelists/glp1ra_codelist.csv'))
+    .withColumnRenamed('category', 'name')
+    .withColumnRenamed('type', 'terminology')
+    .withColumnRenamed('bnf_code', 'code')
+    .withColumnRenamed('standardised_name', 'term')
+    .select('name', 'terminology', 'code', 'term')
+)
+
+codelists_all['glp1'] = codelist_glp1
+
+# COMMAND ----------
+
+# MAGIC %md # 5. Check
+
+# COMMAND ----------
+
+# DBTITLE 1,Check codelists
+count_nulls = lambda df: sum(df.select("*").where(f.col(_).isNull()).count() for _ in df.columns)
+required_columns = ['name', 'terminology', 'code', 'term']
+
+for key, codelist in codelists_all.items():
+    assert set(codelist.columns) == set(required_columns), f"Codelist {key} is either missing required columns or has extraneous ones"
+    assert codelist.count() > 0, f"Codelist {key} is empty" 
+    assert count_nulls(codelist) == 0, f'Codelist {key} contains NULLs'
+  
+
+# COMMAND ----------
+
+# MAGIC %md # 6. Save
+
+# COMMAND ----------
+
+# DBTITLE 1,Combine and save full covariate codelist
+codelist = reduce(DataFrame.unionByName, codelists_all.values())
+save_table(df=codelist, out_name=f'{Project.name}_out_codelist_covariates', save_previous=True)

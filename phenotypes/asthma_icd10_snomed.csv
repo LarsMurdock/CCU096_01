@@ -1,0 +1,170 @@
+name,terminology,code,term,code_type,RecordDate
+asthma,SNOMED,1064811000000103,moderate acute exacerbation of asthma (disorder),1.0,20220215.0
+asthma,SNOMED,1064821000000109,life threatening acute exacerbation of asthma (disorder),1.0,20220215.0
+asthma,SNOMED,10674711000119105,acute severe exacerbation of asthma co-occurrent with allergic rhinitis (disorder),1.0,20220215.0
+asthma,SNOMED,10675391000119101,severe controlled persistent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,10675431000119106,severe persistent allergic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,10675471000119109,acute severe exacerbation of severe persistent allergic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,10675551000119104,acute severe exacerbation of severe persistent asthma co-occurrent with allergic rhinitis (disorder),1.0,20220215.0
+asthma,SNOMED,10675591000119109,severe persistent allergic asthma controlled (finding),1.0,20220215.0
+asthma,SNOMED,10675631000119109,severe persistent asthma controlled co-occurrent with allergic rhinitis (disorder),1.0,20220215.0
+asthma,SNOMED,10675671000119107,severe persistent allergic asthma uncontrolled (finding),1.0,20220215.0
+asthma,SNOMED,10675711000119106,severe persistent asthma uncontrolled co-occurrent with allergic rhinitis (disorder),1.0,20220215.0
+asthma,SNOMED,10675751000119107,severe uncontrolled persistent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,10675871000119106,mild persistent allergic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,10675911000119109,acute severe exacerbation of mild persistent allergic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,10675991000119100,acute severe exacerbation of mild persistent allergic asthma co-occurrent with allergic rhinitis (disorder),1.0,20220215.0
+asthma,SNOMED,10676031000119106,mild persistent allergic asthma controlled (finding),1.0,20220215.0
+asthma,SNOMED,10676071000119109,mild persistent asthma controlled (finding),1.0,20220215.0
+asthma,SNOMED,10676111000119102,mild persistent asthma controlled co-occurrent with allergic rhinitis (disorder),1.0,20220215.0
+asthma,SNOMED,10676151000119101,mild persistent allergic asthma uncontrolled (finding),1.0,20220215.0
+asthma,SNOMED,10676191000119106,mild persistent asthma uncontrolled (finding),1.0,20220215.0
+asthma,SNOMED,10676231000119102,mild persistent asthma uncontrolled co-occurrent with allergic rhinitis (disorder),1.0,20220215.0
+asthma,SNOMED,10676351000119103,moderate persistent asthma controlled (finding),1.0,20220215.0
+asthma,SNOMED,10676391000119108,moderate persistent allergic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,10676431000119103,acute severe exacerbation of moderate persistent allergic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,10676511000119109,acute severe exacerbation of moderate persistent asthma co-occurrent with allergic rhinitis (disorder),1.0,20220215.0
+asthma,SNOMED,10676551000119105,moderate persistent allergic asthma controlled (finding),1.0,20220215.0
+asthma,SNOMED,10676591000119100,moderate persistent controlled asthma co-occurrent with allergic rhinitis (disorder),1.0,20220215.0
+asthma,SNOMED,10676631000119100,moderate persistent allergic asthma uncontrolled (finding),1.0,20220215.0
+asthma,SNOMED,10676671000119102,moderate persistent asthma uncontrolled co-occurrent with allergic rhinitis (disorder),1.0,20220215.0
+asthma,SNOMED,10676711000119103,moderate persistent asthma uncontrolled (finding),1.0,20220215.0
+asthma,SNOMED,10692721000119102,chronic obstructive asthma co-occurrent with acute exacerbation of asthma (disorder),1.0,20220215.0
+asthma,SNOMED,1086701000000102,life threatening acute exacerbation of allergic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,1086711000000100,life threatening acute exacerbation of intrinsic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,1103911000000103,severe asthma with fungal sensitisation (disorder),1.0,20220215.0
+asthma,SNOMED,11641008,millers' asthma (disorder),1.0,20220215.0
+asthma,SNOMED,12428000,intrinsic asthma without status asthmaticus (disorder),1.0,20220215.0
+asthma,SNOMED,124991000119109,severe persistent asthma co-occurrent with allergic rhinitis (disorder),1.0,20220215.0
+asthma,SNOMED,125001000119103,moderate persistent asthma co-occurrent with allergic rhinitis (disorder),1.0,20220215.0
+asthma,SNOMED,125011000119100,mild persistent asthma co-occurrent with allergic rhinitis (disorder),1.0,20220215.0
+asthma,SNOMED,125021000119107,intermittent asthma co-occurrent with allergic rhinitis (disorder),1.0,20220215.0
+asthma,SNOMED,135171000119106,acute exacerbation of moderate persistent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,135181000119109,acute exacerbation of mild persistent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,16584951000119101,oral steroid-dependent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,1741000119102,intermittent asthma uncontrolled (disorder),1.0,20220215.0
+asthma,SNOMED,1751000119100,acute exacerbation of chronic obstructive airways disease with asthma (disorder),1.0,20220215.0
+asthma,SNOMED,18041002,printers' asthma (disorder),1.0,20220215.0
+asthma,SNOMED,195967001,asthma (disorder),1.0,20220215.0
+asthma,SNOMED,195977004,mixed asthma (disorder),1.0,20220215.0
+asthma,SNOMED,225057002,brittle asthma (disorder),1.0,20220215.0
+asthma,SNOMED,233679003,late onset asthma (disorder),1.0,20220215.0
+asthma,SNOMED,233683003,hay fever with asthma (disorder),1.0,20220215.0
+asthma,SNOMED,233688007,sulfite-induced asthma (disorder),1.0,20220215.0
+asthma,SNOMED,233691007,asthmatic pulmonary eosinophilia (disorder),1.0,20220215.0
+asthma,SNOMED,2360001000004109,steroid dependent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,266361008,non-allergic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,281239006,exacerbation of asthma (disorder),1.0,20220215.0
+asthma,SNOMED,30352005,allergic-infective asthma (disorder),1.0,20220215.0
+asthma,SNOMED,304527002,acute asthma (disorder),1.0,20220215.0
+asthma,SNOMED,312453004,asthma - currently active (finding),1.0,20220215.0
+asthma,SNOMED,31387002,exercise-induced asthma (disorder),1.0,20220215.0
+asthma,SNOMED,34015007,bakers' asthma (disorder),1.0,20220215.0
+asthma,SNOMED,370218001,mild asthma (disorder),1.0,20220215.0
+asthma,SNOMED,370219009,moderate asthma (disorder),1.0,20220215.0
+asthma,SNOMED,370220003,occasional asthma (disorder),1.0,20220215.0
+asthma,SNOMED,370221004,severe asthma (disorder),1.0,20220215.0
+asthma,SNOMED,389145006,allergic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,395022009,asthma night-time symptoms (finding),1.0,20220215.0
+asthma,SNOMED,401000119107,asthma with irreversible airway obstruction (disorder),1.0,20220215.0
+asthma,SNOMED,401193004,asthma confirmed (situation),1.0,20220215.0
+asthma,SNOMED,404804003,platinum asthma (disorder),1.0,20220215.0
+asthma,SNOMED,404806001,cheese-makers' asthma (disorder),1.0,20220215.0
+asthma,SNOMED,404808000,isocyanate induced asthma (disorder),1.0,20220215.0
+asthma,SNOMED,405944004,asthmatic bronchitis (disorder),1.0,20220215.0
+asthma,SNOMED,407674008,aspirin-induced asthma (disorder),1.0,20220215.0
+asthma,SNOMED,409663006,cough variant asthma (disorder),1.0,20220215.0
+asthma,SNOMED,41553006,detergent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,418395004,tea-makers' asthma (disorder),1.0,20220215.0
+asthma,SNOMED,423889005,non-immunoglobulin e mediated allergic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,424199006,substance induced asthma (disorder),1.0,20220215.0
+asthma,SNOMED,424643009,immunoglobulin e-mediated allergic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,425969006,exacerbation of intermittent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,426656000,severe persistent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,426979002,mild persistent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,427295004,moderate persistent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,427603009,intermittent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,427679007,mild intermittent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,442025000,acute exacerbation of chronic asthmatic bronchitis (disorder),1.0,20220215.0
+asthma,SNOMED,445427006,seasonal asthma (disorder),1.0,20220215.0
+asthma,SNOMED,55570000,asthma without status asthmaticus (disorder),1.0,20220215.0
+asthma,SNOMED,56968009,asthma caused by wood dust (disorder),1.0,20220215.0
+asthma,SNOMED,57607007,occupational asthma (disorder),1.0,20220215.0
+asthma,SNOMED,63088003,allergic asthma without status asthmaticus (disorder),1.0,20220215.0
+asthma,SNOMED,641000119106,intermittent asthma well controlled (finding),1.0,20220215.0
+asthma,SNOMED,703953004,allergic asthma caused by dermatophagoides pteronyssinus (disorder),1.0,20220215.0
+asthma,SNOMED,703954005,allergic asthma caused by dermatophagoides farinae (disorder),1.0,20220215.0
+asthma,SNOMED,707444001,uncomplicated asthma (disorder),1.0,20220215.0
+asthma,SNOMED,707445000,exacerbation of mild persistent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,707446004,exacerbation of moderate persistent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,707447008,exacerbation of severe persistent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,707511009,uncomplicated mild persistent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,707512002,uncomplicated moderate persistent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,707513007,uncomplicated severe persistent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,707979007,acute severe exacerbation of severe persistent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,707980005,acute severe exacerbation of moderate persistent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,707981009,acute severe exacerbation of mild persistent asthma (disorder),1.0,20220215.0
+asthma,SNOMED,708038006,acute exacerbation of asthma (disorder),1.0,20220215.0
+asthma,SNOMED,708090002,acute severe exacerbation of asthma (disorder),1.0,20220215.0
+asthma,SNOMED,708093000,acute exacerbation of immunoglobulin e-mediated allergic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,708094006,acute exacerbation of intrinsic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,708095007,acute severe exacerbation of immunoglobin e-mediated allergic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,708096008,acute severe exacerbation of intrinsic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,72301000119103,asthma in pregnancy (disorder),1.0,20220215.0
+asthma,SNOMED,733858005,acute severe refractory exacerbation of asthma (disorder),1.0,20220215.0
+asthma,SNOMED,734904007,life threatening acute exacerbation of asthma (disorder),1.0,20220215.0
+asthma,SNOMED,734905008,moderate acute exacerbation of asthma (disorder),1.0,20220215.0
+asthma,SNOMED,735587000,acute severe exacerbation of asthma co-occurrent and due to allergic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,735588005,uncomplicated allergic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,735589002,uncomplicated non-allergic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,762521001,exacerbation of allergic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,782513000,acute severe exacerbation of allergic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,782520007,exacerbation of allergic asthma due to infection (disorder),1.0,20220215.0
+asthma,SNOMED,786836003,near fatal asthma (disorder),1.0,20220215.0
+asthma,SNOMED,866881000000101,chronic asthma with fixed airflow obstruction (disorder),1.0,20220215.0
+asthma,SNOMED,92807009,chemical-induced asthma (disorder),1.0,20220215.0
+asthma,SNOMED,93432008,drug-induced asthma (disorder),1.0,20220215.0
+asthma,SNOMED,99031000119107,acute exacerbation of asthma co-occurrent with allergic rhinitis (disorder),1.0,20220215.0
+asthma,SNOMED,183478001,emergency hospital admission for asthma (procedure),1.0,20220215.0
+asthma,SNOMED,708358003,emergency asthma admission since last encounter (situation),1.0,20220215.0
+asthma,SNOMED,170631002,asthma disturbing sleep (finding),1.0,20220215.0
+asthma,SNOMED,170632009,asthma causing night waking (finding),1.0,20220215.0
+asthma,SNOMED,170633004,asthma disturbs sleep weekly (finding),1.0,20220215.0
+asthma,SNOMED,170634005,asthma disturbs sleep frequently (finding),1.0,20220215.0
+asthma,SNOMED,170635006,asthma not disturbing sleep (finding),1.0,20220215.0
+asthma,SNOMED,170636007,asthma never disturbs sleep (finding),1.0,20220215.0
+asthma,SNOMED,170637003,asthma limiting activities (finding),1.0,20220215.0
+asthma,SNOMED,170638008,asthma not limiting activities (finding),1.0,20220215.0
+asthma,SNOMED,170655007,asthma restricts exercise (finding),1.0,20220215.0
+asthma,SNOMED,170656008,asthma sometimes restricts exercise (finding),1.0,20220215.0
+asthma,SNOMED,170657004,asthma severely restricts exercise (finding),1.0,20220215.0
+asthma,SNOMED,170658009,asthma never restricts exercise (finding),1.0,20220215.0
+asthma,SNOMED,270442000,asthma monitoring check done (finding),1.0,20220215.0
+asthma,SNOMED,370202007,asthma causes daytime symptoms 1 to 2 times per month (finding),1.0,20220215.0
+asthma,SNOMED,370203002,asthma causes daytime symptoms 1 to 2 times per week (finding),1.0,20220215.0
+asthma,SNOMED,370204008,asthma causes daytime symptoms most days (finding),1.0,20220215.0
+asthma,SNOMED,370205009,asthma causes night symptoms 1 to 2 times per month (finding),1.0,20220215.0
+asthma,SNOMED,370206005,asthma limits walking on the flat (finding),1.0,20220215.0
+asthma,SNOMED,370207001,asthma limits walking up hills or stairs (finding),1.0,20220215.0
+asthma,SNOMED,370208006,asthma never causes daytime symptoms (finding),1.0,20220215.0
+asthma,SNOMED,373899003,asthma daytime symptoms (finding),1.0,20220215.0
+asthma,SNOMED,390872009,change in asthma management plan (regime/therapy),1.0,20220215.0
+asthma,SNOMED,390877003,step up change in asthma management plan (regime/therapy),1.0,20220215.0
+asthma,SNOMED,390878008,step down change in asthma management plan (regime/therapy),1.0,20220215.0
+asthma,SNOMED,390921001,absent from work or school due to asthma (finding),1.0,20220215.0
+asthma,SNOMED,394700004,asthma annual review (regime/therapy),1.0,20220215.0
+asthma,SNOMED,473391009,asthma never causes night symptoms (situation),1.0,20220215.0
+asthma,SNOMED,771901000000100,asthma causes night time symptoms 1 to 2 times per week (finding),1.0,20220215.0
+asthma,SNOMED,771941000000102,asthma causes symptoms most nights (finding),1.0,20220215.0
+asthma,SNOMED,771981000000105,asthma limits activities 1 to 2 times per month (finding),1.0,20220215.0
+asthma,SNOMED,772011000000107,asthma limits activities 1 to 2 times per week (finding),1.0,20220215.0
+asthma,SNOMED,772051000000106,asthma limits activities most days (finding),1.0,20220215.0
+asthma,SNOMED,811151000000105,number of days absent from school due to asthma in past 6 months (observable entity),1.0,20220215.0
+asthma,SNOMED,10674991000119104,intermittent allergic asthma (disorder),1.0,20220215.0
+asthma,SNOMED,829976001,thunderstorm asthma (disorder),1.0,20220215.0
+asthma,SNOMED,782559003,asthma never causes night symptoms (finding),1.0,20220215.0
+asthma,ICD10,J450,Predominantly allergic asthma,,
+asthma,ICD10,J451,Nonallergic asthma,,
+asthma,ICD10,J458,Mixed asthma,,
+asthma,ICD10,J459,"Asthma, unspecifieda",,
+asthma,ICD10,J46X,Status asthmaticusa,,

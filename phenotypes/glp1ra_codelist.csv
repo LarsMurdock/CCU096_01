@@ -1,0 +1,75 @@
+,type,category,bnf_code,raw_name,standardised_name,product_name
+0,BNF,GLP1RA,0601023ASAAAAAA,Albiglutide 30mg inj pre-filled disposable devices,Albiglutide,Missing
+1,BNF,GLP1RA,0601023ASBBAAAA,Eperzan 30mg inj pre-filled pens,Albiglutide,Missing
+2,BNF,GLP1RA,0601023ASAAABAB,Albiglutide 50mg inj pre-filled disposable devices,Albiglutide,Missing
+3,BNF,GLP1RA,0601023ASBBABAB,Eperzan 50mg inj pre-filled pens,Albiglutide,Missing
+4,BNF,GLP1RA,0601023AQAAAAAA,Dulaglutide 0.75mg/0.5ml inj pre-filled disposable devices,Dulaglutide,Missing
+5,BNF,GLP1RA,0601023AQBBAAAA,Trulicity 0.75mg/0.5ml inj pre-filled pens,Dulaglutide,Missing
+6,BNF,GLP1RA,0601023AQAAABAB,Dulaglutide 1.5mg/0.5ml inj pre-filled disposable devices,Dulaglutide,Missing
+7,BNF,GLP1RA,0601023AQBBABAB,Trulicity 1.5mg/0.5ml solution for injection pre-filled pens,Dulaglutide,Missing
+8,BNF,GLP1RA,0601023AQAAADAD,Dulaglutide 4.5mg/0.5ml inj pre-filled disposable devices,Dulaglutide,Missing
+9,BNF,GLP1RA,0601023AQBBADAD,Trulicity 4.5mg/0.5ml solution for injection pre-filled pens,Dulaglutide,Missing
+10,BNF,GLP1RA,0601023AQAAACAC,Dulaglutide 3mg/0.5ml inj pre-filled disposable devices,Dulaglutide,Missing
+11,BNF,GLP1RA,0601023AQBBACAC,Trulicity 3mg/0.5ml solution for injection pre-filled pens,Dulaglutide,Missing
+12,BNF,GLP1RA,0601023Y0AAABAB,Exenatide 10micrograms/0.04ml inj 2.4ml pf dispos dev,Exenatide,Missing
+13,BNF,GLP1RA,0601023Y0BBABAB,Byetta 10micrograms/0.04ml inj 2.4ml pre-filled pens,Exenatide,Missing
+14,BNF,GLP1RA,0601023Y0AAAAAA,Exenatide 5micrograms/0.02ml inj 1.2ml pf dispos dev,Exenatide,Missing
+15,BNF,GLP1RA,0601023Y0BBAAAA,Byetta 5micrograms/0.02ml inj 1.2ml pre-filled pens,Exenatide,Missing
+16,BNF,GLP1RA,0601023Y0AAACAC,Exenatide 2mg inj vials,Exenatide,Missing
+17,BNF,GLP1RA,0601023Y0BCAAAC,Bydureon 2mg inj vials,Exenatide,Missing
+18,BNF,GLP1RA,0601023Y0AAADAD,Exenatide 2mg inj pre-filled disposable devices,Exenatide,Missing
+19,BNF,GLP1RA,0601023Y0BCABAD,Bydureon 2mg inj pre-filled pens,Exenatide,Missing
+20,BNF,GLP1RA,0601023Y0AAAEAE,Exenatide 2mg/0.85ml prolonged-release inj pf dispos dev,Exenatide,Missing
+21,BNF,GLP1RA,0601023Y0BCACAE,Bydureon BCise 2mg/0.85ml prolonged-release inj pf pens,Exenatide,Missing
+22,BNF,GLP1RA,0601023AUAAAAAA,Insulin degludec 100u/ml/Lirag 3.6mg/ml inj3ml pf dispos dev,Liraglutide,Missing
+23,BNF,GLP1RA,0601023AUBBAAAA,Xultophy 100units/ml / 3.6mg/ml inj 3ml pre-filled pens,Liraglutide,Missing
+24,BNF,GLP1RA,0601023ABAAAAAA,Liraglutide 6mg/1ml inj 3ml pre-filled disposable devices,Liraglutide,Missing
+25,BNF,GLP1RA,0601023ABBBAAAA,Victoza 6mg/ml solution for injection 3ml pre-filled pens,Liraglutide,Missing
+26,BNF,GLP1RA,0601023ABBCAAAA,Saxenda 6mg/ml solution for injection 3ml pre-filled pens,Liraglutide,Missing
+27,BNF,GLP1RA,0601012ABAAABAB,Ins glargine 100u/ml / Lixis 50mcg/ml inj 3ml pf dispos dev,Lixisenatide,Missing
+28,BNF,GLP1RA,0601012ABBBABAB,Suliqua 100units/ml / 50microg/ml inj 3ml pf SoloStar pens,Lixisenatide,Missing
+29,BNF,GLP1RA,0601012ABAAAAAA,Ins glargine 100u/ml / Lixis 33mcg/ml inj 3ml pf dispos dev,Lixisenatide,Missing
+30,BNF,GLP1RA,0601012ABBBAAAA,Suliqua 100units/ml / 33microg/ml inj 3ml pf SoloStar pens,Lixisenatide,Missing
+31,BNF,GLP1RA,0601023AIAAAAAA,Lixisenatide 20micrograms/0.2ml inj 3ml pf dispos dev,Lixisenatide,Missing
+32,BNF,GLP1RA,0601023AIBBAAAA,Lyxumia 20micrograms/0.2ml inj 3ml pre-filled pens,Lixisenatide,Missing
+33,BNF,GLP1RA,0601023AIAAABAB,Lixisenatide 10micrograms/0.2ml inj 3ml pf dispos dev,Lixisenatide,Missing
+34,BNF,GLP1RA,0601023AIBBABAB,Lyxumia 10micrograms/0.2ml inj 3ml pre-filled pens,Lixisenatide,Missing
+35,BNF,GLP1RA,0601023AIAAACAC,Lixisenatide 10microg/0.2ml and 20microg/0.2ml inj,Lixisenatide,Missing
+36,BNF,GLP1RA,0601023AIBBACAC,Lyxumia 10micrograms/20micrograms treatment initiation pack,Lixisenatide,Missing
+37,BNF,GLP1RA,0601023AWAAAHAH,Semaglutide 1.7mg/0.75ml inj 3ml pf dispos dev,Semaglutide,Wegovy
+38,BNF,GLP1RA,0601023AWBDACAH,Wegovy FlexTouch 1.7mg/0.75ml inj 3ml pre-filled pens,Semaglutide,Wegovy
+39,BNF,GLP1RA,0601023AWAAAGAG,Semaglutide 0.25mg/0.37ml inj 1.5ml pf dispos dev,Semaglutide,Wegovy
+40,BNF,GLP1RA,0601023AWBDABAG,Wegovy FlexTouch 0.25mg/0.37ml inj 1.5ml pre-filled pens,Semaglutide,Wegovy
+41,BNF,GLP1RA,0601023AWAAAJAJ,Semaglutide 2.4mg/0.75ml inj 3ml pf dispos dev,Semaglutide,Wegovy
+42,BNF,GLP1RA,0601023AWBDAEAJ,Wegovy FlexTouch 2.4mg/0.75ml inj 3ml pre-filled pens,Semaglutide,Wegovy
+43,BNF,GLP1RA,0601023AWAAAIAI,Semaglutide 1mg/0.75ml inj 3ml pre-filled disposable devices,Semaglutide,Wegovy
+44,BNF,GLP1RA,0601023AWBDADAI,Wegovy FlexTouch 1mg/0.75ml inj 3ml pre-filled pens,Semaglutide,Wegovy
+45,BNF,GLP1RA,0601023AWAAAAAA,Semaglutide 0.25mg/0.19ml inj 1.5ml pf dispos dev,Semaglutide,Ozempic
+46,BNF,GLP1RA,0601023AWBBAAAA,Ozempic 0.25mg/0.19ml inj 1.5ml pre-filled pens,Semaglutide,Ozempic
+47,BNF,GLP1RA,0601023AWAAABAB,Semaglutide 0.5mg/0.37ml inj 1.5ml pf dispos dev,Semaglutide,Ozempic
+48,BNF,GLP1RA,0601023AWBBABAB,Ozempic 0.5mg/0.37ml inj 1.5ml pre-filled pens,Semaglutide,Ozempic
+49,BNF,GLP1RA,0601023AWBDAAAB,Wegovy FlexTouch 0.5mg/0.37ml inj 1.5ml pre-filled pens,Semaglutide,Wegovy
+50,BNF,GLP1RA,0601023AWAAACAC,Semaglutide 1mg/0.74ml inj 3ml pre-filled disposable devices,Semaglutide,Ozempic
+51,BNF,GLP1RA,0601023AWBBACAC,Ozempic 1mg/0.74ml inj 3ml pre-filled pens,Semaglutide,Ozempic
+52,BNF,GLP1RA,0601023AWAAAEAE,Semaglutide 3mg tablets,Semaglutide,Rybelsus
+53,BNF,GLP1RA,0601023AWBCABAE,Rybelsus 3mg tablets,Semaglutide,Rybelsus
+54,BNF,GLP1RA,0601023AWAAAFAF,Semaglutide 7mg tablets,Semaglutide,Rybelsus
+55,BNF,GLP1RA,0601023AWBCACAF,Rybelsus 7mg tablets,Semaglutide,Rybelsus
+56,BNF,GLP1RA,0601023AWAAADAD,Semaglutide 14mg tablets,Semaglutide,Rybelsus
+57,BNF,GLP1RA,0601023AWBCAAAD,Rybelsus 14mg tablets,Semaglutide,Rybelsus
+58,BNF,GLP1RA,0601023AZAAACAC,Tirzepatide 7.5mg/0.6ml inj 2.4ml pf dispos dev,Tirzepatide,Mounjaro
+59,BNF,GLP1RA,0601023AZBBACAC,Mounjaro KwikPen 7.5mg/0.6ml inj 2.4ml pre-filled pens,Tirzepatide,Mounjaro
+60,BNF,GLP1RA,0601023AZAAADAD,Tirzepatide 15mg/0.6ml inj 2.4ml pf dispos dev,Tirzepatide,Mounjaro
+61,BNF,GLP1RA,0601023AZBBADAD,Mounjaro KwikPen 15mg/0.6ml inj 2.4ml pre-filled pens,Tirzepatide,Mounjaro
+62,BNF,GLP1RA,0601023AZAAAEAE,Tirzepatide 12.5mg/0.6ml inj 2.4ml pf dispos dev,Tirzepatide,Mounjaro
+63,BNF,GLP1RA,0601023AZBBAEAE,Mounjaro KwikPen 12.5mg/0.6ml inj 2.4ml pre-filled pens,Tirzepatide,Mounjaro
+64,BNF,GLP1RA,0601023AZAAAFAF,Tirzepatide 10mg/0.6ml inj 2.4ml pf dispos dev,Tirzepatide,Mounjaro
+65,BNF,GLP1RA,0601023AZBBAFAF,Mounjaro KwikPen 10mg/0.6ml inj 2.4ml pre-filled pens,Tirzepatide,Mounjaro
+66,BNF,GLP1RA,0601023AZAAAGAG,Tirzepatide 5mg/0.6ml inj 2.4ml pf dispos dev,Tirzepatide,Mounjaro
+67,BNF,GLP1RA,0601023AZBBAGAG,Mounjaro KwikPen 5mg/0.6ml inj 2.4ml pre-filled pens,Tirzepatide,Mounjaro
+68,BNF,GLP1RA,0601023AZAAAHAH,Tirzepatide 2.5mg/0.6ml inj 2.4ml pf dispos dev,Tirzepatide,Mounjaro
+69,BNF,GLP1RA,0601023AZBBAHAH,Mounjaro KwikPen 2.5mg/0.6ml inj 2.4ml pre-filled pens,Tirzepatide,Mounjaro
+70,BNF,GLP1RA,0601023AZAAAAAA,Tirzepatide 2.5mg/0.5ml inj pre-filled disposable devices,Tirzepatide,Mounjaro
+71,BNF,GLP1RA,0601023AZBBAAAA,Mounjaro 2.5mg/0.5ml solution for injection pre-filled pens,Tirzepatide,Mounjaro
+72,BNF,GLP1RA,0601023AZAAABAB,Tirzepatide 5mg/0.5ml inj pre-filled disposable devices,Tirzepatide,Mounjaro
+73,BNF,GLP1RA,0601023AZBBABAB,Mounjaro 5mg/0.5ml solution for injection pre-filled pens,Tirzepatide,Mounjaro

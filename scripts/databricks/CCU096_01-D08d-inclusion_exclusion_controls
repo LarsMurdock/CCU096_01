@@ -1,0 +1,388 @@
+# Databricks notebook source
+# MAGIC %md # CCU096_01-D08d-inclusion_exclusion_controls
+# MAGIC  
+# MAGIC **Description** This notebook applies the inclusion/exclusion to define the control population.
+# MAGIC 1. Exclude patients who died before the start of follow-up (01 Nov 2019).
+# MAGIC 2. Exclude patients not in GDPPR.
+# MAGIC 3. Exclude patients outside England.
+# MAGIC 4. Exclude patients who failed the quality assurance checks (D04).
+# MAGIC 5. Exclude patients aged <18 years at the end of follow-up (30 Apr 2025).
+# MAGIC 6. Exclude patients aged >100 years at the start of follow-up (01 Nov 2019).
+# MAGIC 7. Exclude patients who've had any record of obesity.
+# MAGIC  
+# MAGIC **Authors** Stelios Boulitsakis Logothetis
+# MAGIC  
+# MAGIC 
+# MAGIC
+# MAGIC **Acknowledgements** Based on previous work by Carmen Petitjean, Spencer Keene for CCU004_03 and the Health Data Science Team, BHF Data Science Centre.
+# MAGIC
+# MAGIC **Data Output**
+# MAGIC - **`tmp_inc_exc_cohort_controls`** : cohort remaining after inclusion/exclusion criteria applied.
+# MAGIC - **`tmp_inc_exc_flow_controls`** : flowchart displaying total n of cohort after each inclusion/exclusion rule is applied.
+
+# COMMAND ----------
+
+# MAGIC %md # 0. Setup
+
+# COMMAND ----------
+
+# DBTITLE 1,Libraries
+import pyspark.sql.functions as f
+from pyspark.sql import Column, DataFrame
+
+# COMMAND ----------
+
+# DBTITLE 1,Functions
+# MAGIC %run "shds/common/functions"
+
+# COMMAND ----------
+
+# MAGIC %md # 1. Parameters
+
+# COMMAND ----------
+
+# MAGIC %run "./CCU096_01-D01-parameters"
+
+# COMMAND ----------
+
+# MAGIC %md # 2. Data Sources
+
+# COMMAND ----------
+
+# DBTITLE 1,Import data sources
+# Sources for basic inclusion/exclusion
+skinny       = spark.table(Paths.cur_skinny)
+qa           = spark.table(Paths.tmp_quality_assurance)
+
+# Obesity diagnoses
+history_wide = spark.table(f'{Project.dsa}.{Project.name}_tmp_obesity_history_wide')
+history_wide_10yr = spark.table(f'{Project.dsa}.{Project.name}_tmp_obesity_history_wide_10yr')
+history_wide_5yr = spark.table(f'{Project.dsa}.{Project.name}_tmp_obesity_history_wide_5yr')
+
+# Pregnancy
+history_wide_preg = spark.table(f'{Project.dsa}.{Project.name}_tmp_obesity_history_wide_pregnancy')
+
+# COMMAND ----------
+
+# MAGIC %md # 3. Prepare
+
+# COMMAND ----------
+
+# DBTITLE 1,Inner join data sources
+df_starting = (
+    skinny 
+    .select('PERSON_ID', 'date_of_birth', 'date_of_death', 'in_gdppr', 'region')
+    .join(qa.select('PERSON_ID', '_rule_total'), on="PERSON_ID", how="inner")
+    .join(history_wide.select('PERSON_ID', 'cov_hx_first_obesity_date', 'cov_hx_first_obesity_30kgm2_date'), on='PERSON_ID', how='left')
+)
+
+df_starting_10yr = (
+    skinny 
+    .select('PERSON_ID', 'date_of_birth', 'date_of_death', 'in_gdppr', 'region')
+    .join(qa.select('PERSON_ID', '_rule_total'), on="PERSON_ID", how="inner")
+    .join(history_wide_10yr.select('PERSON_ID', 'cov_hx_first_obesity_date', 'cov_hx_first_obesity_30kgm2_date'), on='PERSON_ID', how='left')
+)
+
+df_starting_5yr = (
+    skinny 
+    .select('PERSON_ID', 'date_of_birth', 'date_of_death', 'in_gdppr', 'region')
+    .join(qa.select('PERSON_ID', '_rule_total'), on="PERSON_ID", how="inner")
+    .join(history_wide_5yr.select('PERSON_ID', 'cov_hx_first_obesity_date', 'cov_hx_first_obesity_30kgm2_date'), on='PERSON_ID', how='left')
+)
+
+df_starting_preg = (
+    skinny 
+    .select('PERSON_ID', 'date_of_birth', 'date_of_death', 'in_gdppr', 'region')
+    .join(qa.select('PERSON_ID', '_rule_total'), on="PERSON_ID", how="inner")
+    .join(history_wide_preg.select('PERSON_ID', 'cov_hx_first_obesity_date', 'cov_hx_first_obesity_30kgm2_date'), on='PERSON_ID', how='left')
+)
+
+temp_save(df=df_starting, out_name=f'{Project.name}_tmp_inc_exc_controls_merged')
+temp_save(df=df_starting_10yr, out_name=f'{Project.name}_tmp_inc_exc_controls_merged_10yr')
+temp_save(df=df_starting_5yr, out_name=f'{Project.name}_tmp_inc_exc_controls_merged_5yr')
+
+temp_save(df=df_starting_preg, out_name=f'{Project.name}_tmp_inc_exc_controls_merged_pregnancy')
+
+# COMMAND ----------
+
+df_starting = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_controls_merged')
+df_starting_10yr = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_controls_merged_10yr')
+df_starting_5yr = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_controls_merged_5yr')
+
+df_starting_preg = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_controls_merged_pregnancy')
+
+# COMMAND ----------
+
+display(df_starting)
+
+# COMMAND ----------
+
+display(df_starting_10yr)
+
+# COMMAND ----------
+
+# MAGIC %md # 4. Inclusion / Exclusion
+
+# COMMAND ----------
+
+# DBTITLE 1,Define inclusion rules
+conditions, condition_descriptions = {}, {}
+baseline_date = f.to_date(f.lit(Project.study_start_date))
+study_end_date = f.to_date(f.lit(Project.study_end_date))
+
+# Condition 1: Exclude patients who failed the quality assurance
+# This step implicitly removes ~19m individuals from the skinny table with missing DOB or sex.
+conditions[1] = (f.col('_rule_total').isNull())
+condition_descriptions[1] = "Post exclusion of patients who failed the quality assurance"
+
+# Condition 2: Exclude patients who died before baseline 
+conditions[2] = (f.col('date_of_death').isNull() | (f.col('date_of_death') > baseline_date))
+condition_descriptions[2] = "Post exlusion of patients who died before baseline"
+
+# Condition 3: Exclude patients not in GDPPR
+conditions[3] = (f.col('in_gdppr') == 1)
+condition_descriptions[3] = "Post exclusion of patients not in GDPPR"
+
+# Condition 4: Exclude patients with a region outside of England (including nulls)
+conditions[4] = f.col('region').isNotNull() & ~f.col('region').isin(['Scotland', 'Wales'])
+condition_descriptions[4] = "Post exclusion of patients outside England (also excluding missing region)"
+
+# Condition 5: Exclude patients aged < 18 at end of follow-up
+index_minus_18y = f.add_months(study_end_date, -18*12)
+conditions[5] = (f.col('date_of_birth') <= index_minus_18y)
+condition_descriptions[5] = "Post exclusion of patients aged < 18 years at study end date"
+
+# Condition 6: Exclude patients aged > 99 at baseline
+index_minus_100y = f.add_months(baseline_date, -100*12)
+conditions[6] = (f.col('date_of_birth') >= index_minus_100y)
+condition_descriptions[6] = "Post exclusion of patients aged >= 100 years at baseline"
+
+#***REMOVED***Condition 7: Exclude patients with any diagnosis of obesity
+conditions[7] = f.col('cov_hx_first_obesity_date').isNull()
+condition_descriptions[7] = 'Post exclusion of patients with any diagnosis of obesity'
+
+# COMMAND ----------
+
+# MAGIC %md # 5. Execute
+
+# COMMAND ----------
+
+# DBTITLE 1,Execute exclusions and run tally
+# Initialise working state and running tally
+tally = _count_var(df_starting, 'PERSON_ID', ret=1, df_desc='Original', indx=0)
+df_working = df_starting
+
+# Execute the inclusion/exclusion rules properly
+for idx, condition in conditions.items():
+    print(f'{idx}: {condition_descriptions[idx]}')
+    df_working = df_working.where(condition)
+    tally = tally.unionByName(
+        _count_var(df_working, 'PERSON_ID', ret=1, df_desc=condition_descriptions[idx], indx=idx)
+    )
+
+# COMMAND ----------
+
+# DBTITLE 1,Execute exclusions and run tally for 10 year look-back period
+# Initialise working state and running tally
+tally = _count_var(df_starting_10yr, 'PERSON_ID', ret=1, df_desc='Original', indx=0)
+df_working_10yr = df_starting_10yr
+
+# Execute the inclusion/exclusion rules properly
+for idx, condition in conditions.items():
+    print(f'{idx}: {condition_descriptions[idx]}')
+    df_working_10yr = df_working_10yr.where(condition)
+    tally = tally.unionByName(
+        _count_var(df_working_10yr, 'PERSON_ID', ret=1, df_desc=condition_descriptions[idx], indx=idx)
+    )
+
+# COMMAND ----------
+
+# DBTITLE 1,Check
+# Ensure we haven't accidentally ended up with an empty cohort
+assert df_working.count() > 0
+
+# COMMAND ----------
+
+# MAGIC %md ## 5.2 Flow Diagram
+
+# COMMAND ----------
+
+def flow_diagram_diffs(df):
+    """ Given the running tally dataframe, augments with with deltas for every colunm (the difference between the current row and the previous row) """
+    r = df.copy()
+    for col in ['n', 'n_id', 'n_id_distinct']:
+        r[col] = df[col].astype(int)
+        
+        # Create n_diff, n_id_diff, n_id_distinct_diff
+        diff_col = f'{col}_diff'
+        r[diff_col] = (r[col] - r[col].shift(1)).fillna(0).astype(int)
+    return r
+
+def format_flow_diagram(df):
+    """ Given the running tally dataframe, formats the large numerical values with commas """
+    r = df.copy()
+    for col in ['n', 'n_id', 'n_id_distinct', 'n_diff', 'n_id_diff', 'n_id_distinct_diff']:
+        # Reformat to add commas (e.g. 53166323 -> "51,166,323")
+        r[col] = df[col].map('{:,.0f}'.format).astype(str)
+
+    return r.set_index('indx')
+
+df_flow = flow_diagram_diffs(
+    tally
+    .orderBy('indx')
+    .select('indx', 'df_desc', 'n', 'n_id', 'n_id_distinct')
+    .withColumnRenamed('df_desc', 'stage')
+    .toPandas()
+)
+
+print(format_flow_diagram(df_flow).to_string())
+
+# COMMAND ----------
+
+# MAGIC %md To adhere to SDE data exporting rules, we have to round to the nearest 10 and suppress anything too small 
+
+# COMMAND ----------
+
+# DBTITLE 1,Round flow chart according to data exporting rules
+from mythoslib import censor_for_sde
+
+df_flow_censored = df_flow.copy()
+# For each numeric column 
+for col in df_flow_censored.select_dtypes('number'):
+    # Censor the numeric values
+    df_flow_censored[col] = df_flow_censored[col].apply(censor_for_sde)
+
+print(format_flow_diagram(df_flow_censored).to_string())
+
+# COMMAND ----------
+
+# MAGIC %md # 6. Inclusion / Exclusion (same obesity definition for all)
+
+# COMMAND ----------
+
+conditions, condition_descriptions = {}, {}
+baseline_date = f.to_date(f.lit(Project.study_start_date))
+study_end_date = f.to_date(f.lit(Project.study_end_date))
+
+# Condition 1: Exclude patients who failed the quality assurance
+# This step implicitly removes ~19m individuals from the skinny table with missing DOB or sex.
+conditions[1] = (f.col('_rule_total').isNull())
+condition_descriptions[1] = "Post exclusion of patients who failed the quality assurance"
+
+# Condition 2: Exclude patients who died before baseline 
+conditions[2] = (f.col('date_of_death').isNull() | (f.col('date_of_death') > baseline_date))
+condition_descriptions[2] = "Post exlusion of patients who died before baseline"
+
+# Condition 3: Exclude patients not in GDPPR
+conditions[3] = (f.col('in_gdppr') == 1)
+condition_descriptions[3] = "Post exclusion of patients not in GDPPR"
+
+# Condition 4: Exclude patients with a region outside of England (including nulls)
+conditions[4] = f.col('region').isNotNull() & ~f.col('region').isin(['Scotland', 'Wales'])
+condition_descriptions[4] = "Post exclusion of patients outside England (also excluding missing region)"
+
+# Condition 5: Exclude patients aged < 18 at end of follow-up
+index_minus_18y = f.add_months(study_end_date, -18*12)
+conditions[5] = (f.col('date_of_birth') <= index_minus_18y)
+condition_descriptions[5] = "Post exclusion of patients aged < 18 years at study end date"
+
+# Condition 6: Exclude patients aged > 99 at baseline
+index_minus_100y = f.add_months(baseline_date, -100*12)
+conditions[6] = (f.col('date_of_birth') >= index_minus_100y)
+condition_descriptions[6] = "Post exclusion of patients aged >= 100 years at baseline"
+
+#***REMOVED***Condition 7: Exclude patients with any diagnosis of obesity
+conditions[7] = f.col('cov_hx_first_obesity_30kgm2_date').isNull()
+condition_descriptions[7] = 'Post exclusion of patients with any diagnosis of obesity'
+
+# COMMAND ----------
+
+# MAGIC %md # 7. Execute
+
+# COMMAND ----------
+
+# Initialise working state and running tally
+tally = _count_var(df_starting, 'PERSON_ID', ret=1, df_desc='Original', indx=0)
+df_working_30kgm2 = df_starting
+
+# Execute the inclusion/exclusion rules properly
+for idx, condition in conditions.items():
+    print(f'{idx}: {condition_descriptions[idx]}')
+    df_working_30kgm2 = df_working_30kgm2.where(condition)
+    tally = tally.unionByName(
+        _count_var(df_working_30kgm2, 'PERSON_ID', ret=1, df_desc=condition_descriptions[idx], indx=idx)
+    )
+
+# COMMAND ----------
+
+# Initialise working state and running tally
+tally = _count_var(df_starting, 'PERSON_ID', ret=1, df_desc='Original', indx=0)
+df_working_30kgm2_10yr = df_starting_10yr
+
+# Execute the inclusion/exclusion rules properly
+for idx, condition in conditions.items():
+    print(f'{idx}: {condition_descriptions[idx]}')
+    df_working_30kgm2_10yr = df_working_30kgm2_10yr.where(condition)
+    tally = tally.unionByName(
+        _count_var(df_working_30kgm2_10yr, 'PERSON_ID', ret=1, df_desc=condition_descriptions[idx], indx=idx)
+    )
+
+# COMMAND ----------
+
+# Initialise working state and running tally
+tally = _count_var(df_starting, 'PERSON_ID', ret=1, df_desc='Original', indx=0)
+df_working_30kgm2_5yr = df_starting_5yr
+
+# Execute the inclusion/exclusion rules properly
+for idx, condition in conditions.items():
+    print(f'{idx}: {condition_descriptions[idx]}')
+    df_working_30kgm2_5yr = df_working_30kgm2_5yr.where(condition)
+    tally = tally.unionByName(
+        _count_var(df_working_30kgm2_5yr, 'PERSON_ID', ret=1, df_desc=condition_descriptions[idx], indx=idx)
+    )
+
+# COMMAND ----------
+
+# Initialise working state and running tally
+tally = _count_var(df_starting_preg, 'PERSON_ID', ret=1, df_desc='Original', indx=0)
+df_working_preg = df_starting_preg
+
+# Execute the inclusion/exclusion rules properly
+for idx, condition in conditions.items():
+    print(f'{idx}: {condition_descriptions[idx]}')
+    df_working_preg = df_working_preg.where(condition)
+    tally = tally.unionByName(
+        _count_var(df_working_preg, 'PERSON_ID', ret=1, df_desc=condition_descriptions[idx], indx=idx)
+    )
+
+# COMMAND ----------
+
+# MAGIC %md # 8. Save
+
+# COMMAND ----------
+
+from mythoslib import save_table, temp_save
+
+# COMMAND ----------
+
+# DBTITLE 1,Save post-inclusion/exclusion cohort
+save_table(df=df_working, out_name=f'{Project.name}_tmp_inc_exc_cohort_controls', save_previous=True)
+save_table(df=df_working_10yr, out_name=f'{Project.name}_tmp_inc_exc_cohort_controls_10yr', save_previous=True)
+save_table(df=df_working_30kgm2, out_name=f'{Project.name}_tmp_inc_exc_cohort_controls_30kgm2', save_previous=True)
+save_table(df=df_working_30kgm2_10yr, out_name=f'{Project.name}_tmp_inc_exc_cohort_controls_30kgm2_10yr', save_previous=True)
+
+save_table(df=df_working_preg, out_name=f'{Project.name}_tmp_inc_exc_cohort_controls_pregnancy', save_previous=True)
+
+# COMMAND ----------
+
+save_table(df=df_working_30kgm2_5yr, out_name=f'{Project.name}_tmp_inc_exc_cohort_controls_30kgm2_5yr', save_previous=True)
+
+# COMMAND ----------
+
+# DBTITLE 1,Take a look
+display(spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_cohort_controls'))
+
+# COMMAND ----------
+
+# DBTITLE 1,Save running tally flow table
+save_table(df=tally, out_name=f'{Project.name}_tmp_inc_exc_flow_controls', save_previous=True)

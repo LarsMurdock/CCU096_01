@@ -1,0 +1,528 @@
+# Databricks notebook source
+# MAGIC %md # CCU096_01-D10a-02-covariates_controls
+# MAGIC  
+# MAGIC **Description** This notebook creates following covariates:
+# MAGIC   - Smoking
+# MAGIC   - Medications
+# MAGIC
+# MAGIC Covariates will be defined using a selection/priority group to allow prioritisation of the different time periods around the index date
+# MAGIC
+# MAGIC **Authors** Stelios Boulitsakis Logothetis
+# MAGIC
+# MAGIC 
+# MAGIC
+# MAGIC **Acknowledgements** Based on previous work by Carmen Petitjean, Spencer Keene for CCU004_03 and the Health Data Science Team, BHF Data Science Centre.
+# MAGIC
+# MAGIC **Data Output**
+# MAGIC - **`out_covariates`** : Covariates for the cohort (smoking, medications).
+
+# COMMAND ----------
+
+# MAGIC %md # 0. Setup
+
+# COMMAND ----------
+
+# DBTITLE 1,Libraries
+import pyspark.sql.functions as f
+from pyspark.sql import Window
+
+# COMMAND ----------
+
+# DBTITLE 1,Common functions
+# MAGIC %run "shds/common/functions"
+
+# COMMAND ----------
+
+# MAGIC %md # 1. Parameters
+
+# COMMAND ----------
+
+# MAGIC %run "./CCU096_01-D01-parameters"
+
+# COMMAND ----------
+
+# MAGIC %md # 2. Data Sources
+
+# COMMAND ----------
+
+# DBTITLE 1,Import data sources
+codelist_covariates = spark.table(Paths.out_codelist_covariates)
+inc_exc = spark.table(f'{Project.dsa}.{Project.name}_tmp_inc_exc_controls_start_date')
+
+hes_apc_long = spark.table(Paths.cur_hes_apc_long)
+hes_apc_otr = load_dataset_batch('hes_apc_otr')
+gdppr = load_dataset_batch('gdppr')
+pmeds = load_dataset_batch('pmeds')
+
+# COMMAND ----------
+
+# MAGIC %md # 3. Prepare
+
+# COMMAND ----------
+
+# MAGIC %md ## 3.1 Codelist
+# MAGIC
+# MAGIC We select the codelists for smoking groups (current, ex, or never-smoker) and for the following medications: statins, antihypertensives, and metformin.
+
+# COMMAND ----------
+
+# DBTITLE 1,Partition codelist by covariate
+codelist_smoking = (
+    codelist_covariates
+    .where(f.col('name').isin([
+        'smoking_current','smoking_ex','smoking_never'
+    ]))
+)
+
+codelist_medications = (
+    codelist_covariates
+    .where(f.col('name').isin([
+        'GLP1RA'
+    ]))
+)
+
+# COMMAND ----------
+
+# MAGIC %md ## 3.2 Curate Source Data
+
+# COMMAND ----------
+
+# MAGIC %md ###3.2.1 GDPPR
+# MAGIC
+# MAGIC We prepare GDPPR for the smoking feature, constraining it to our desired time period (up to 3 months lookforward from baseline). 
+# MAGIC
+# MAGIC Originally, this notebook set the start of the lookback period as the DATE of the earliest smoking record in GDPPR, thus covering all historical records. However, this yields a censoring start date of '1760-01-01'. There are 17,500 smoking records dated before 1900-01-01 (obviously wrong). We may as well hardcode something. We set it to 20 years before the baseline date.
+
+# COMMAND ----------
+
+# DBTITLE 1,Prepare GDPPR for smoking
+# smoking_start_date is the start of the lookback period: We set it to 20 years before the index date
+# smoking_end_date is the end of the lookback period. 3 months ahead of the index (lookforward slightly into the future)
+# GDPPR will be prepared with the above start and end dates and then CENSOR_DATE_END will be adjusted for individuals
+# smoking_start_date = f.add_months(f.col('inclusion_date'), -12*20)
+# smoking_end_date = f.add_months(f.col('inclusion_date'), 3)
+smoking_start_date = f.add_months(f.to_date(f.col('entry_date')), -12*20)
+smoking_end_date   = f.add_months(f.to_date(f.col('entry_date')), 3)
+
+# Note that GDPPR is being prepared here for everyone in the cohort; whether they have smoking records or not
+gdppr_prepared = (
+    gdppr
+    # reduce and rename columns
+    .select(f.col('NHS_NUMBER_DEID').alias('PERSON_ID'), 'DATE', 'CODE')
+
+    # Inner join with cohort table 
+    # .join(inc_exc.select('PERSON_ID', 'inclusion_date'), on='PERSON_ID', how='inner')
+    .join(inc_exc.select('PERSON_ID', 'entry_date'), on='PERSON_ID', how='inner')
+
+    # Filter per the dates we set above
+    .where(
+        (f.col('DATE') > smoking_start_date) & 
+        (f.col('DATE') <= smoking_end_date)
+    )
+)
+
+# COMMAND ----------
+
+# MAGIC %md ###3.2.2 PMEDs
+
+# COMMAND ----------
+
+# DBTITLE 1,Prepare PMEDs
+# medicines_start_date is the start of the lookback period: We set it to the patient-specific CVD history event date
+# medicines_end_date is the end of the lookback period. Same as index
+# medicines_start_date = f.col('cov_hx_first_cvd_date')
+# medicines_end_date = f.to_date(f.lit(Project.study_start_date))
+
+# pmeds_prepared = (
+#    pmeds
+    # Reduce and rename columns
+#    .select(['Person_ID_DEID', 'ProcessingPeriodDate', 'PrescribedBNFCode'])
+#    .withColumnRenamed('Person_ID_DEID', 'PERSON_ID')
+#    .withColumnRenamed('ProcessingPeriodDate', 'DATE')
+#    .withColumnRenamed('PrescribedBNFCode', 'CODE')
+
+    # Inner join with cohort table
+#    .join(inc_exc.select('PERSON_ID', 'cov_hx_first_cvd_date'), on='PERSON_ID', how='inner')
+
+    # Check within censoring range, accounting for nulls (discard any records with null dates)
+#    .where(
+#        (f.col('DATE').isNotNull()) & 
+#        (f.col('DATE') >= medicines_start_date) &
+#        (f.col('DATE') <= medicines_end_date)
+#    )
+# )
+
+# COMMAND ----------
+
+# MAGIC %md # 4. Smoking
+# MAGIC
+# MAGIC Smoking status is defined using a selection group to prioritise records from the different time periods around the baseline date.
+# MAGIC <br> Where x is the difference in years from the record date to the baseline date, the priority groups **for smoking** are defined as follows:
+# MAGIC
+# MAGIC **1.** -20 <= x < 0 (**20 years before**)
+# MAGIC
+# MAGIC **2.** 0 <= x < +0.25 (3 months after)
+# MAGIC
+# MAGIC That is, only where a smoking record cannot be found before baseline, will records be looked at 3 months after.
+# MAGIC
+# MAGIC Note that smoking status can change over time and *smoking upgrades* will be considered. A person may have historic records indicating that they are a current smoker but more recent records (closest to baseline) indicating that they have never smoked. In this case the historical records should be considered in order to potentially upgrade the person from a non-smoker to an ex-smoker.
+
+# COMMAND ----------
+
+# MAGIC %md ## 4.1 Codematch all
+
+# COMMAND ----------
+
+# MAGIC %md First, we extract all the smoking records for each individual between the pre-defined extreme censor start and end dates via simple inner join with the codelist.
+
+# COMMAND ----------
+
+# DBTITLE 1,Match all smoking records
+gdppr_smoking = gdppr_prepared.join(codelist_smoking, on='code', how='inner')
+
+# COMMAND ----------
+
+# MAGIC %md ##4.2 Selection groups
+
+# COMMAND ----------
+
+# MAGIC %md Now we assign selection groups in order to identify an individual's censoring date in relation to the closest record date (to baseline) in the highest priority group.
+# MAGIC   1. -20 <= x < 0 (20 years before baseline)
+# MAGIC   2. 0 <= x < +0.25 (3 months after baseline)
+# MAGIC
+# MAGIC Note that smoking groups are not treated independently. We are finding an individual's censoring date across all smoking groups.
+
+# COMMAND ----------
+
+# DBTITLE 1,Assign selection groups
+
+# add a selection group to allow prioritisation of the different time periods around the study start date
+# 1: -infinity <= x < 0 (all years before)
+# 2: 0 <= x < +0.25 (3 months after)
+# where x is the difference in years from the DATE to the study start date
+smoking_selection_groups = (
+    gdppr_smoking
+    .withColumn('selection_group',
+              f.when((f.col('DATE')  >= smoking_start_date) & (f.col('DATE') < f.col('entry_date')), 1)
+              .when((f.col('DATE')  >= f.col('entry_date')) & (f.col('DATE') < smoking_end_date), 2)
+              .otherwise(-1))
+    .withColumn('diff_abs', f.abs(f.datediff(f.col('DATE'), f.col('entry_date'))/365.25))
+)
+
+# COMMAND ----------
+
+# DBTITLE 1,Select the smoking record with highest priority
+smoking_window = (
+    Window
+    .partitionBy('PERSON_ID')
+    .orderBy(f.col("PERSON_ID"), f.col('selection_group'),f.col("diff_abs").asc())  
+)
+
+smoking_prioritised = (
+    smoking_selection_groups
+    .withColumn('_rank', f.dense_rank().over(smoking_window))
+    .where(f.col('_rank') == 1)
+    .drop('_rank')
+)
+
+# COMMAND ----------
+
+# MAGIC %md ## 4.3 Smoking history censoring date
+# MAGIC
+# MAGIC Given the highest priority smoking record per patient, we store the date of that record. This will be the "censoring date" for the patient's smoking history. We use this patient-individual date to further prepare GDPRR (filtering out records dated after that censoring date).
+
+# COMMAND ----------
+
+# DBTITLE 1,Obtain patient-specific smoking history censoring date
+smoking_individual_censor_dates = (
+    smoking_prioritised
+    .select(f.col("PERSON_ID"),f.col("DATE").alias("CENSOR_DATE_END"))
+)
+
+# COMMAND ----------
+
+# MAGIC %md ##4.4 Full smoking history
+# MAGIC
+# MAGIC We use the censoring dates to extract each patient's full smoking history from GDPPR. First we filter GDPPR to just all records up to the patient-individual censoring date for each patient. Then we finally match with the smoking codelist. 
+
+# COMMAND ----------
+
+# DBTITLE 1,Prepare GDPPR
+# Filter GDPPR to exclude records > than an individual's CENSOR_DATE_END - note gdppr here includes all codes (not just smoking)
+
+gdppr_censored = (
+    gdppr_prepared
+    .join((smoking_individual_censor_dates), on=["PERSON_ID"], how="inner")
+    .where(f.col('DATE') <= f.col('CENSOR_DATE_END'))
+)
+
+# COMMAND ----------
+
+# DBTITLE 1,Codelist match
+from mythoslib import codelist_match_v3, codelist_match_summary
+_smoking_in = {
+    'gdppr': (gdppr_censored, codelist_smoking,  1)
+}
+
+smoking_all, smoking_latest, smoking_latest_wide = codelist_match_v3(_smoking_in, name_prefix=f'cov_', latest_event=True)
+_, smoking_summary_name_code = codelist_match_summary(_smoking_in, smoking_all)
+
+# Temp save
+smoking_latest = temp_save(df=smoking_latest, out_name=f'{Project.name}_tmp_covariates_smoking_latest')
+smoking_latest_wide = temp_save(df=smoking_latest_wide, out_name=f'{Project.name}_tmp_covariates_smoking_latest_wide')
+smoking_summary_name_code = temp_save(df=smoking_summary_name_code, out_name=f'{Project.name}_tmp_covariates_smoking_summary_name_code')
+
+# COMMAND ----------
+
+# DBTITLE 1,Load (if re-running)
+smoking_latest = spark.table(f'{Project.dsa}.{Project.name}_tmp_covariates_smoking_latest')
+smoking_latest_wide = spark.table(f'{Project.dsa}.{Project.name}_tmp_covariates_smoking_latest_wide')
+smoking_summary_name_code = spark.table(f'{Project.dsa}.{Project.name}_tmp_covariates_smoking_summary_name_code')
+
+# COMMAND ----------
+
+# MAGIC %md ##4.5 Smoking status
+# MAGIC
+# MAGIC  We obtain the "smoking status" per person. I.e., their latest smoking category (Current, Ex, or Never). We further define a "never smoking upgrade" indicator - it's value is `1` if the latest smoking category is Never but there's past data indicating past smoking (thus the Never category is erroneous). In such cases, we set the smoking status to Ex. 
+
+# COMMAND ----------
+
+# DBTITLE 1,Derive smoking status
+from mythoslib import map_column_with_dict
+
+def smoking_status(df_smoking_latest, df_smoking_latest_wide):
+    """ Given the matched codelist tables:
+    smoking_last: (PERSON_ID, CODE, NAME, DATE) - (long format, one record for smoking_never, one for smoking_current, etc)
+    smoking_last_wide: (PERSON_ID, SMOKING_CURRENT_DATE, SMOKING_EX_DATE, SMOKING_NEVER_DATE) - (wide format, one record per PERSON_ID)
+    Identifies the latest smoking category per PERSON_ID and produces an indicator of whether the latest is an "erroneous" "Never Smoker" record
+    I.e. the latest is "Never Smoker" but there's past data indicating past smoking.
+    If two smoking records have identical dates, we prioritise SMOKING_CURRENT, then EX, then NEVER. 
+    """
+
+    # First, obtain an indicator of whether there's a "Never Smoker" record dated later than current or ex smoker records
+    current, ex, never = f.col('cov_smoking_current_date'), f.col('cov_smoking_ex_date'), f.col('cov_smoking_never_date')
+    latest = f.greatest(ex, current)
+
+    # We access the `smoking_last_wide` dataframe, (PERSON_ID, SMOKING_CURRENT_DATE, SMOKING_EX_DATE, SMOKING_NEVER_DATE)
+    # We flag records where SMOKING_NEVER_DATE is not null and greater than SMOKING_CURRENT_DATE or SMOKING_EX_DATE (assuming at least one is not null)
+    df_upgrade = (
+        df_smoking_latest_wide
+        .withColumn('cov_smoking_never_upgrade', (never.isNotNull() & latest.isNotNull() & (never > latest)).cast('integer'))
+        .select('PERSON_ID', 'cov_smoking_never_upgrade')
+    )
+
+    # Second, we obtain the latest smoking record per person
+    # We partition by PERSON_ID and order by date (descending)
+    smoking_window = (
+        Window.partitionBy('PERSON_ID').orderBy(f.col("DATE").desc(), f.col('_priority').desc())  
+    )
+
+    tie_priority = {
+        'smoking_current': 1,
+        'smoking_ex': 2,
+        'smoking_never': 3
+    }
+
+    # Then we simply pick the top row per partition
+    # CAREFUL: We use _priority to explicitly resolve ties. row_number would otherwise implicitly pick a random option
+    # Instead, we use tie_priority to specify that smoking_current wins out in ties
+    df_latest = (
+        df_smoking_latest
+        .withColumn('_priority', map_column_with_dict(f.col('name'), tie_priority))
+        .withColumn('_rank', f.row_number().over(smoking_window)).where(f.col('_rank') == 1).drop('_rank')
+        .withColumnRenamed('name', 'cov_smoking_status')
+        .withColumnRenamed('DATE', 'cov_smoking_date')
+    )
+
+    # We inner join the resulting tables to obtain (PERSON_ID, COV_SMOKING_STATUS, COV_SMOKING_NEVER_UPGRADE)
+    # Result table has only one record per PERSON_ID
+    result = (
+        df_latest
+        .join(df_upgrade, how='inner', on='PERSON_ID')
+        # We upgrade never-smokers to ex-smokers if they have a smoking history we identified
+        .withColumn('cov_smoking_status', f.when(
+            f.col('cov_smoking_never_upgrade') == 1, "smoking_ex"
+        ).otherwise(f.col('cov_smoking_status')))
+
+        .select('PERSON_ID', 'cov_smoking_date', 'cov_smoking_status', 'cov_smoking_never_upgrade')
+    ) 
+
+    return result
+
+smoking_latest_status = smoking_status(smoking_latest, smoking_latest_wide)
+smoking_latest_status = temp_save(df=smoking_latest_status, out_name=f'{Project.name}_tmp_covariates_smoking_latest_status')
+
+# COMMAND ----------
+
+# DBTITLE 1,Load (if re-running)
+smoking_latest_status = spark.table(f'{Project.dsa}.{Project.name}_tmp_covariates_smoking_latest_status')
+
+# COMMAND ----------
+
+# DBTITLE 1,Check
+# checks
+tab(smoking_latest_status, 'cov_smoking_status', 'cov_smoking_never_upgrade')
+
+# COMMAND ----------
+
+# MAGIC %md ##4.6 Check
+
+# COMMAND ----------
+
+# MAGIC %md ###4.6.1 Distinct code matches
+# MAGIC
+# MAGIC We inspect how many records and how many distinct PERSON_IDs per smoking SNOMED code.
+
+# COMMAND ----------
+
+display(smoking_summary_name_code.orderBy('name', 'terminology', 'code'))
+
+# COMMAND ----------
+
+# MAGIC %md ### 4.6.2 Distinct PERSON_IDs
+# MAGIC
+# MAGIC We ensure the final result is a subset of the cohort table and has no duplicate PERSON_IDs
+
+# COMMAND ----------
+
+smoking_latest_status_unique_ids = smoking_latest_status.select('PERSON_ID').distinct().count()
+
+assert smoking_latest_status_unique_ids == smoking_latest_status.count()
+assert smoking_latest_status_unique_ids <= inc_exc.count()
+
+# COMMAND ----------
+
+# MAGIC %md ## 4.7 Re-format
+# MAGIC
+# MAGIC We distill the smoking history we have collected into a simple binary flag of current smoking or not at the baseline date. 
+# MAGIC NOTE: Smoking is unique among the usual code-matched covariates in that we can't assume that finding no match means False. There is an explicit code for not smoking and, if this is not present, we have no knowledge of whether the person is a smoker or not.  
+
+# COMMAND ----------
+
+# DBTITLE 1,Binarise and join with cohort
+from mythoslib import map_column_with_dict
+
+smoking_cohort = (
+    smoking_latest_status
+    .withColumn('cov_current_smoker', map_column_with_dict(f.col('cov_smoking_status'), dict(
+        smoking_current=1, 
+        smoking_ex=0,
+        smoking_never=0
+    ), ignore_missing=False))
+    .select('PERSON_ID', 'cov_smoking_status', 'cov_current_smoker')
+    .join(inc_exc.select('PERSON_ID'), on='PERSON_ID', how='right')
+)
+
+_tab(smoking_cohort, 'cov_current_smoker')
+
+# COMMAND ----------
+
+# MAGIC %md # 5. Medications
+# MAGIC
+# MAGIC We consider all medications up to 1.5 years before baseline. We do not apply any look-forward period. 
+
+# COMMAND ----------
+
+# MAGIC %md We skip prioritisation and individual censor dates as we don't apply any look-forward period to the medications, so no need to prioritise anything. We directly skip to matching the medication codelist to PMEDs.
+
+# COMMAND ----------
+
+# MAGIC %md ##5.1 Codelist match
+
+# COMMAND ----------
+
+# DBTITLE 1,Codelist match
+#***REMOVED***from mythoslib import codelist_match_v3, codelist_match_summary
+# _meds_in = {
+#  'pmeds': (pmeds_prepared, codelist_medications,  1)
+# }
+
+# meds_all, meds_latest, meds_latest_wide = codelist_match_v3(_meds_in, name_prefix=f'cov_meds_', latest_event=True)
+# _, meds_summary_name_code = codelist_match_summary(_meds_in, meds_all)
+
+# meds_latest = temp_save(df=meds_latest, out_name=f'{Project.name}_tmp_covariates_meds_latest')
+# meds_latest_wide = temp_save(df=meds_latest_wide, out_name=f'{Project.name}_tmp_covariates_meds_latest_wide')
+#***REMOVED***meds_summary_name_code = temp_save(df=meds_summary_name_code, out_name=f'{Project.name}_tmp_covariates_meds_summary_name_code')
+
+# COMMAND ----------
+
+# DBTITLE 1,Load (if re-running)
+# meds_latest = spark.table(f'{Project.dsa}.{Project.name}_tmp_covariates_meds_latest')
+# meds_latest_wide = spark.table(f'{Project.dsa}.{Project.name}_tmp_covariates_meds_latest_wide')
+#***REMOVED***meds_summary_name_code = spark.table(f'{Project.dsa}.{Project.name}_tmp_covariates_meds_summary_name_code')
+
+# COMMAND ----------
+
+# MAGIC %md ##5.2 Check
+
+# COMMAND ----------
+
+# DBTITLE 1,Summaries
+#***REMOVED***display(meds_summary_name_code.orderBy('name', 'terminology', 'code'))
+
+# COMMAND ----------
+
+# DBTITLE 1,Checks
+# Check 1: Ensure the final result is a subset of the cohort table and has no duplicated PERSON_IDs.
+# meds_latest_wide_unique_ids = meds_latest_wide.select('PERSON_ID').distinct().count()
+# assert meds_latest_wide_unique_ids == meds_latest_wide.count()
+# assert meds_latest_wide_unique_ids <= inc_exc.count()
+
+# Check 2: Ensure all matches come after the patient-specific CVD event history date and and before the baseline date
+# _df_meds_joined = meds_latest.join(inc_exc.select('PERSON_ID', 'cov_hx_first_cvd_date'), on='PERSON_ID', how='inner')
+# assert _df_meds_joined.where((f.col('DATE') < f.col('cov_hx_first_cvd_date')) | (f.col('DATE') > Project.study_start_date)).count() == 0
+
+# COMMAND ----------
+
+# MAGIC %md ## 5.3 Re-format
+# MAGIC
+# MAGIC We join with the cohort table and fill nulls
+
+# COMMAND ----------
+
+# meds_cohort = (
+#     meds_latest_wide
+#     .join(inc_exc.select('PERSON_ID'), on='PERSON_ID', how='right')
+#     .na.fill(0)
+# )
+
+# COMMAND ----------
+
+# MAGIC %md # 7. Save
+# MAGIC
+# MAGIC Finally, we take the outer join of all the produced tables of covariates and save to the database.
+
+# COMMAND ----------
+
+# DBTITLE 1,Join all produced covariate tables
+covariates_final = (
+    smoking_cohort # PERSON_ID, cov_current_smoker
+    # .join(meds_cohort, on='PERSON_ID', how='outer') # PERSON_ID, cov_{medicine}_flag, cov_{medicine}_date
+)
+
+# COMMAND ----------
+
+# DBTITLE 1,Save
+save_table(df=covariates_final, out_name=f'{Project.name}_out_covariates_controls', save_previous=True)
+
+# COMMAND ----------
+
+# DBTITLE 1,Load (if re-running)
+covariates_final = spark.table(f'{Project.dsa}.{Project.name}_out_covariates_controls')
+
+# COMMAND ----------
+
+# DBTITLE 1,Check
+# Number of rows should equal the cohort table size
+assert covariates_final.count() == inc_exc.count()
+
+covariates_final_unique_ids = covariates_final.select("PERSON_ID").distinct().count()
+
+# Ensure we haven't lost any cohort members 
+assert covariates_final_unique_ids == inc_exc.select('PERSON_ID').distinct().count()
+
+# Ensure we haven't created a cartesian product 
+assert covariates_final.count() <= inc_exc.count()
+
+# Ensure there are no duplicate PERSON_IDs
+assert covariates_final_unique_ids == covariates_final.count()
